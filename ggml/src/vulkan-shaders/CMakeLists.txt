@@ -1,7 +1,15 @@
+cmake_minimum_required(VERSION 3.12)
+project(vulkan-shaders-gen C CXX)
+
 find_package (Threads REQUIRED)
 
 set(TARGET vulkan-shaders-gen)
 add_executable(${TARGET} vulkan-shaders-gen.cpp)
-install(TARGETS ${TARGET} RUNTIME)
+
+if (${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+    install(TARGETS ${TARGET} RUNTIME)
+else()
+    install(TARGETS ${TARGET} RUNTIME DESTINATION bin)
+endif()
 target_compile_features(${TARGET} PRIVATE cxx_std_11)
 target_link_libraries(vulkan-shaders-gen PUBLIC Threads::Threads)
