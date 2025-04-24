@@ -181,20 +181,25 @@ int32_t mtmd_tokenize(mtmd_context * ctx,
     // a bit hacky here, but works for now
     // for some models, we need to add prefix and suffix to the image embeddings
     if (clip_is_gemma3(ctx->ctx_clip)) {
+        LOG_INF("[ByJunil] clip_is_gemma3\n");
         // gemma 3
         // <start_of_image> ... (image embeddings) ... <end_of_image>
         marker_modified = "<start_of_image>" + ctx->image_marker + "<end_of_image>";
         string_replace_all(prompt_modified, ctx->image_marker, marker_modified);
 
     } else if (proj_type == PROJECTOR_TYPE_IDEFICS3) {
+        LOG_INF("[ByJunil] proj_type == PROJECTOR_TYPE_IDEFICS3\n");
         // https://github.com/huggingface/transformers/blob/a42ba80fa520c784c8f11a973ca9034e5f859b79/src/transformers/models/idefics3/processing_idefics3.py#L192-L215
         marker_modified = "<fake_token_around_image><global-img>" + ctx->image_marker + "<fake_token_around_image>";
         string_replace_all(prompt_modified, ctx->image_marker, marker_modified);
 
     } else if (proj_type == PROJECTOR_TYPE_PIXTRAL) {
+        LOG_INF("[ByJunil] proj_type == PROJECTOR_TYPE_PIXTRAL\n");
         // https://github.com/huggingface/transformers/blob/1cd110c6cb6a6237614130c470e9a902dbc1a4bd/docs/source/en/model_doc/pixtral.md
         marker_modified = ctx->image_marker + "[IMG_END]";
         string_replace_all(prompt_modified, ctx->image_marker, marker_modified);
+    } else {
+        LOG_INF("[ByJunil] proj_type == PROJECTOR_TYPE_UNKNOWN\n");
     }
 
     // llava-1.5, llava-1.6, Yi-VL, Yi-34B, granite: don't need to add prefix and suffix

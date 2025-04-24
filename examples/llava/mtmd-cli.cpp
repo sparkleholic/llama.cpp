@@ -227,6 +227,7 @@ static int eval_message(mtmd_cli_context & ctx, common_chat_msg & msg, std::vect
     text.text          = formatted_chat.prompt;
     text.add_special   = add_bos;
     text.parse_special = true;
+    LOG("[ByJunil] text.text: %s\n", text.text.c_str());
     mtmd_input_chunks chunks;
 
     if (g_is_interrupted) return 0;
@@ -291,9 +292,18 @@ int main(int argc, char ** argv) {
     if (g_is_interrupted) return 130;
 
     if (is_single_turn) {
+        LOG("[ByJunil] is_single_turn: %d\n", is_single_turn);
         g_is_generating = true;
         if (params.prompt.find("<__image__>") == std::string::npos) {
             params.prompt += " <__image__>";
+        } else 
+        {
+            LOG("[ByJunil] params.prompt contains <__image__>\n");
+      }
+        //Print params.prompt
+        LOG("[ByJunil] params.prompt: %s\n", params.prompt.c_str());
+        for (auto & image : params.image) {
+            LOG("[ByJunil] params.image: %s\n", image.c_str());
         }
         common_chat_msg msg;
         msg.role = "user";
