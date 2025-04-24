@@ -343,6 +343,7 @@ struct common_params {
     // multimodal models (see examples/llava)
     struct common_params_model mmproj;
     std::vector<std::string> image; // path to image file(s)
+    bool cam = false; // use webcam input instead of --image
 
     // embedding
     bool embedding         = false; // get only sentence embedding

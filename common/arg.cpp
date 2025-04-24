@@ -2114,6 +2114,13 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             params.image.emplace_back(value);
         }
     ).set_examples({LLAMA_EXAMPLE_LLAVA}));
+    add_opt(common_arg(
+        {"--cam"},
+        "Use webcam input instead of --image.",
+        [](common_params & params) {
+            params.cam = true;
+        }
+    ).set_examples({LLAMA_EXAMPLE_LLAVA}));
     if (llama_supports_rpc()) {
         add_opt(common_arg(
             {"--rpc"}, "SERVERS",

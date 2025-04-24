@@ -12,6 +12,8 @@
 #include <limits.h>
 #include <cinttypes>
 
+#include <opencv2/opencv.hpp>
+
 #if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
 #include <signal.h>
 #include <unistd.h>
@@ -204,6 +206,79 @@ static int generate_response(mtmd_cli_context & ctx, common_sampler * smpl, int 
     return 0;
 }
 
+static int eval_message(mtmd_cli_context & ctx, common_chat_msg & msg, const cv::Mat & frame, bool add_bos = false) {
+    std::vector<mtmd_bitmap> bitmaps;
+
+    // Convert cv::Mat to mtmd_bitmap
+    mtmd_bitmap bitmap;
+    cv::Mat rgb_frame;
+    if (frame.empty()) {
+        LOG_ERR("Input frame is empty\n");
+        return 2;
+    }
+    // Ensure RGB format
+    if (frame.channels() == 3) {
+        cv::cvtColor(frame, rgb_frame, cv::COLOR_BGR2RGB);
+    } else if (frame.channels() == 1) {
+        cv::cvtColor(frame, rgb_frame, cv::COLOR_GRAY2RGB);
+    } else {
+         // Assuming RGBA or BGRA, convert to RGB
+        cv::cvtColor(frame, rgb_frame, cv::COLOR_BGRA2RGB); // Or COLOR_RGBA2RGB if needed
+    }
+
+    bitmap.nx = rgb_frame.cols;
+    bitmap.ny = rgb_frame.rows;
+    bitmap.data.resize(bitmap.nx * bitmap.ny * 3);
+    if (rgb_frame.isContinuous()) {
+        memcpy(bitmap.data.data(), rgb_frame.data, bitmap.data.size());
+    } else {
+        // Copy row by row if not continuous
+        for (uint32_t y = 0; y < bitmap.ny; ++y) {
+            memcpy(bitmap.data.data() + y * bitmap.nx * 3, rgb_frame.ptr(y), bitmap.nx * 3);
+        }
+    }
+    // You might want to set a unique bitmap.id here if needed for caching
+
+    bitmaps.push_back(std::move(bitmap));
+
+    common_chat_templates_inputs tmpl_inputs;
+    tmpl_inputs.messages = {msg};
+    tmpl_inputs.add_generation_prompt = true;
+    tmpl_inputs.use_jinja = false; // jinja is buggy here
+    auto formatted_chat = common_chat_templates_apply(ctx.tmpls.get(), tmpl_inputs);
+    LOG_DBG("formatted_chat.prompt: %s\n", formatted_chat.prompt.c_str());
+
+    mtmd_input_text text;
+    text.text          = formatted_chat.prompt;
+    text.add_special   = add_bos;
+    text.parse_special = true;
+    LOG("[ByJunil] text.text: %s\n", text.text.c_str());
+    mtmd_input_chunks chunks;
+
+    if (g_is_interrupted) return 0;
+
+    int32_t res = mtmd_tokenize(ctx.ctx_vision.get(), chunks, text, bitmaps);
+    if (res != 0) {
+        LOG_ERR("Unable to tokenize prompt, res = %d\n", res);
+        return 1;
+    }
+
+    // Important: Need to clear KV cache between frames if we want independent analysis
+    // Or manage n_past carefully if we want context carry-over (more complex)
+    // For simplicity, let's reset n_past and clear KV cache for each frame.
+    ctx.n_past = 0;
+    llama_kv_cache_clear(ctx.lctx);
+
+    if (mtmd_helper_eval(ctx.ctx_vision.get(), ctx.lctx, chunks, ctx.n_past, 0, ctx.n_batch)) {
+        LOG_ERR("Unable to eval prompt\n");
+        return 1;
+    }
+
+    ctx.n_past += mtmd_helper_get_n_tokens(chunks);
+
+    return 0;
+}
+
 static int eval_message(mtmd_cli_context & ctx, common_chat_msg & msg, std::vector<std::string> & images_fname, bool add_bos = false) {
     std::vector<mtmd_bitmap> bitmaps;
 
@@ -260,15 +335,20 @@ int main(int argc, char ** argv) {
 
     common_init();
 
-    if (params.mmproj.path.empty()) {
+    if (params.mmproj.path.empty() && !params.cam) {
         show_additional_info(argc, argv);
-        return 1;
+        LOG_ERR("Error: --mmproj is required unless --cam is specified (and mmproj is handled internally?).\n");
+        if (params.mmproj.path.empty()){
+             LOG_ERR("Error: --mmproj is required.\n");
+             return 1;
+        }
     }
 
     mtmd_cli_context ctx(params);
     printf("%s: %s\n", __func__, params.model.path.c_str());
 
-    bool is_single_turn = !params.prompt.empty() && !params.image.empty();
+    bool is_single_turn = !params.cam && !params.prompt.empty() && !params.image.empty();
+    bool is_cam_mode = params.cam;
 
     struct common_sampler * smpl = common_sampler_init(ctx.model, params.sampling);
     int n_predict = params.n_predict < 0 ? INT_MAX : params.n_predict;
@@ -291,7 +371,79 @@ int main(int argc, char ** argv) {
 
     if (g_is_interrupted) return 130;
 
-    if (is_single_turn) {
+    if (is_cam_mode) {
+        LOG("\n Running in webcam mode.\n");
+        cv::VideoCapture cap(0); // Open default camera
+        if (!cap.isOpened()) {
+            LOG_ERR("Error: Could not open camera\n");
+            return 1;
+        }
+
+        std::string default_prompt = "Describe the scene.";
+        if (!params.prompt.empty()) {
+            default_prompt = params.prompt;
+             LOG("Using prompt: %s\n", default_prompt.c_str());
+        } else {
+             LOG("Using default prompt: %s\n", default_prompt.c_str());
+        }
+        // Ensure prompt has image marker
+        if (default_prompt.find("<__image__>") == std::string::npos) {
+            default_prompt += " <__image__>";
+        }
+
+        cv::Mat frame;
+        cv::namedWindow("Webcam Preview", cv::WINDOW_AUTOSIZE);
+
+        while (!g_is_interrupted) {
+            cap >> frame; // Capture a new frame
+            if (frame.empty()) {
+                LOG_WRN("Warning: Captured empty frame\n");
+                if (cv::waitKey(30) >= 0) break; // Allow exit even on empty frames
+                continue;
+            }
+
+            cv::imshow("Webcam Preview", frame);
+
+            // Prepare message
+            common_chat_msg msg;
+            msg.role = "user";
+            msg.content = default_prompt; // Use the same prompt for each frame
+
+            g_is_generating = true;
+            LOG("\nProcessing frame...\n");
+            int eval_ret = eval_message(ctx, msg, frame, true); // Use the overloaded eval_message
+            g_is_generating = false; // Mark generation phase started
+
+            if (eval_ret != 0) {
+                 LOG_ERR("Error evaluating frame: %d\n", eval_ret);
+                 // Decide how to handle eval errors, maybe continue?
+                 if (cv::waitKey(30) >= 0) break; // Check for exit key press
+                 continue; // Try next frame
+            }
+
+            printf("ASSISTANT: ");
+            fflush(stdout);
+
+            g_is_generating = true;
+            if (generate_response(ctx, smpl, n_predict)) {
+                 LOG_ERR("Error generating response\n");
+                 // Decide how to handle generation errors
+                 // return 1; // Or break/continue
+            }
+            g_is_generating = false;
+
+            // Check for key press to exit (e.g., ESC key)
+            int key = cv::waitKey(30); // Wait for 30ms
+            if (key >= 0) { // Use >= 0 to catch any key press
+                 LOG("\nKey pressed, exiting webcam mode.\n");
+                 break;
+            }
+        }
+
+        cap.release();
+        cv::destroyAllWindows();
+
+    } else if (is_single_turn) {
         LOG("[ByJunil] is_single_turn: %d\n", is_single_turn);
         g_is_generating = true;
         if (params.prompt.find("<__image__>") == std::string::npos) {

@@ -65,6 +65,9 @@ add_executable(llama-llava-cli    deprecation-warning.cpp)
 add_executable(llama-gemma3-cli   deprecation-warning.cpp)
 add_executable(llama-minicpmv-cli deprecation-warning.cpp)
 
+find_package(OpenCV REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
+
 set(TARGET llama-qwen2vl-cli)
 add_executable(${TARGET} qwen2vl-cli.cpp)
 set_target_properties(${TARGET} PROPERTIES OUTPUT_NAME llama-qwen2vl-cli)
@@ -77,6 +80,7 @@ add_executable(${TARGET} mtmd-cli.cpp)
 set_target_properties(${TARGET} PROPERTIES OUTPUT_NAME llama-mtmd-cli)
 install(TARGETS ${TARGET} RUNTIME)
 target_link_libraries(${TARGET} PRIVATE common mtmd ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(${TARGET} PRIVATE ${OpenCV_LIBS})
 target_compile_features(${TARGET} PRIVATE cxx_std_17)
 
 set(TARGET llama-llava-clip-quantize-cli)
