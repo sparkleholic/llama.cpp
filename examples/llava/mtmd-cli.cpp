@@ -466,17 +466,6 @@ int main(int argc, char ** argv) {
         
         // Store the generated text
         std::string generated_text = "ASSISTANT: ";
-        
-        // Flag to track if we're currently processing a frame
-        bool processing_frame = false;
-        // Time tracking for frame processing
-        auto last_process_time = std::chrono::steady_clock::now();
-        // Minimum time between processing frames (in milliseconds)
-        const int min_process_interval = 2000; // 2 seconds
-        
-        // Store the last processed frame for display
-        cv::Mat last_processed_frame;
-        bool has_processed_frame = false;
 
         while (!g_is_interrupted) {
             cap >> frame; // Capture a new frame
@@ -486,100 +475,48 @@ int main(int argc, char ** argv) {
                 continue;
             }
 
-            // Create a display frame with horizontal split
-            cv::Mat display_frame;
+            // Create a copy of the frame to add text
+            cv::Mat display_frame = frame.clone();
             
-            // If we have a processed frame, create a horizontally split top section
-            if (has_processed_frame) {
-                // Resize both frames to the same height for horizontal concatenation
-                int target_height = frame.rows;
-                int target_width = frame.cols;
-                
-                cv::Mat resized_live = frame.clone();
-                cv::Mat resized_processed = last_processed_frame.clone();
-                
-                // Create the top section with horizontal split
-                cv::Mat top_section;
-                cv::hconcat(resized_live, resized_processed, top_section);
-                
-                // Add text section at the bottom
-                int text_height = 150; // Height of the text section
-                cv::Mat text_section(text_height, top_section.cols, CV_8UC3, cv::Scalar(0, 0, 0));
-                
-                // Add the generated text to the text section with word wrapping
-                update_display_with_text(text_section, generated_text);
-                
-                // Combine the top section and text section
-                cv::vconcat(top_section, text_section, display_frame);
-            } else {
-                // If we don't have a processed frame yet, just show the live feed with text
-                // Create a copy of the frame to add text
-                display_frame = frame.clone();
-                
-                // Add text section at the bottom
-                int text_height = 150; // Height of the text section
-                cv::Mat text_section(text_height, frame.cols, CV_8UC3, cv::Scalar(0, 0, 0));
-                
-                // Add the generated text to the text section with word wrapping
-                update_display_with_text(text_section, generated_text);
-                
-                // Combine the frame and text section
-                cv::vconcat(display_frame, text_section, display_frame);
-            }
+            // Update the display with the current text
+            update_display_with_text(display_frame, generated_text);
             
             // Show the combined image
             cv::imshow("Webcam Preview", display_frame);
-            
-            // Check if it's time to process a new frame
-            auto current_time = std::chrono::steady_clock::now();
-            auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                current_time - last_process_time).count();
-            
-            // Process a new frame if we're not already processing and enough time has passed
-            if (!processing_frame && elapsed_ms >= min_process_interval) {
-                // Store the current frame for processing
-                last_processed_frame = frame.clone();
-                
-                // Prepare message
-                common_chat_msg msg;
-                msg.role = "user";
-                msg.content = default_prompt; // Use the same prompt for each frame
 
-                g_is_generating = true;
-                LOG("\nProcessing frame...\n");
-                processing_frame = true;
-                last_process_time = current_time;
-                
-                int eval_ret = eval_message(ctx, msg, frame, true); // Use the overloaded eval_message
-                g_is_generating = false; // Mark generation phase started
+            // Prepare message
+            common_chat_msg msg;
+            msg.role = "user";
+            msg.content = default_prompt; // Use the same prompt for each frame
 
-                if (eval_ret != 0) {
-                     LOG_ERR("Error evaluating frame: %d\n", eval_ret);
-                     processing_frame = false;
-                     // Decide how to handle eval errors, maybe continue?
-                     if (cv::waitKey(30) >= 0) break; // Check for exit key press
-                     continue; // Try next frame
-                }
+            g_is_generating = true;
+            LOG("\nProcessing frame...\n");
+            int eval_ret = eval_message(ctx, msg, frame, true); // Use the overloaded eval_message
+            g_is_generating = false; // Mark generation phase started
 
-                printf("ASSISTANT: ");
-                fflush(stdout);
-                
-                // Clear the generated text for a new response
-                generated_text = "ASSISTANT: ";
-
-                g_is_generating = true;
-                if (generate_response(ctx, smpl, n_predict, generated_text, display_frame)) {
-                     LOG_ERR("Error generating response\n");
-                     // Decide how to handle generation errors
-                     // return 1; // Or break/continue
-                }
-                g_is_generating = false;
-                processing_frame = false;
-                has_processed_frame = true;
+            if (eval_ret != 0) {
+                 LOG_ERR("Error evaluating frame: %d\n", eval_ret);
+                 // Decide how to handle eval errors, maybe continue?
+                 if (cv::waitKey(30) >= 0) break; // Check for exit key press
+                 continue; // Try next frame
             }
 
+            printf("ASSISTANT: ");
+            fflush(stdout);
+            
+            // Clear the generated text for a new response
+            generated_text = "ASSISTANT: ";
+
+            g_is_generating = true;
+            if (generate_response(ctx, smpl, n_predict, generated_text, display_frame)) {
+                 LOG_ERR("Error generating response\n");
+                 // Decide how to handle generation errors
+                 // return 1; // Or break/continue
+            }
+            g_is_generating = false;
+            
             // Check for key press to exit (e.g., ESC key)
-            int key = cv::waitKey(30); // Wait for 30ms
+            int key = cv::waitKey(5000); // Wait for 30ms
             if (key >= 0) { // Use >= 0 to catch any key press
                  LOG("\nKey pressed, exiting webcam mode.\n");
                  break;
