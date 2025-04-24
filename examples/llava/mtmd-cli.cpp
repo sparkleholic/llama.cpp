@@ -170,8 +170,13 @@ struct decode_embd_batch {
     }
 };
 
-static int generate_response(mtmd_cli_context & ctx, common_sampler * smpl, int n_predict) {
+// Helper function to update the display with text
+static void update_display_with_text(cv::Mat & display_frame, const std::string & text);
+
+static int generate_response(mtmd_cli_context & ctx, common_sampler * smpl, int n_predict, std::string & generated_text, cv::Mat & display_frame) {
     llama_tokens generated_tokens;
+    std::string collected_text;
+    
     for (int i = 0; i < n_predict; i++) {
         if (i > n_predict || !g_is_generating || g_is_interrupted) {
             printf("\n");
@@ -187,8 +192,10 @@ static int generate_response(mtmd_cli_context & ctx, common_sampler * smpl, int 
             break; // end of generation
         }
 
-        printf("%s", common_token_to_piece(ctx.lctx, token_id).c_str());
+        std::string token_text = common_token_to_piece(ctx.lctx, token_id).c_str();
+        printf("%s", token_text.c_str());
         fflush(stdout);
+        collected_text += token_text;
 
         if (g_is_interrupted) {
             printf("\n");
@@ -203,7 +210,70 @@ static int generate_response(mtmd_cli_context & ctx, common_sampler * smpl, int 
             return 1;
         }
     }
+    
+    // Update the generated_text with all collected tokens at once
+    generated_text = collected_text;
+    
+    // Update the display with the complete text only once at the end
+    update_display_with_text(display_frame, generated_text);
+    cv::imshow("Webcam Preview", display_frame);
+    cv::waitKey(1); // Process any pending events
+    
     return 0;
+}
+
+// Implementation of the helper function
+static void update_display_with_text(cv::Mat & display_frame, const std::string & text) {
+    // Add text section at the bottom
+    int text_height = 150; // Height of the text section
+    cv::Mat text_section(text_height, display_frame.cols, CV_8UC3, cv::Scalar(0, 0, 0));
+    
+    // Split the text into lines based on newline characters
+    std::vector<std::string> lines;
+    std::istringstream text_stream(text);
+    std::string line;
+    while (std::getline(text_stream, line)) {
+        lines.push_back(line);
+    }
+    
+    // Add the generated text to the text section with word wrapping
+    int max_chars_per_line = 80; // Approximate characters per line
+    int line_height = 25; // Height between lines
+    int start_x = 10;
+    int start_y = 30;
+    int line_count = 0;
+    
+    // Process each line from the text
+    for (const auto & text_line : lines) {
+        if (line_count >= 5) break; // Limit to 5 lines to avoid overflow
+        
+        size_t pos = 0;
+        while (pos < text_line.length() && line_count < 5) {
+            size_t end_pos = pos + max_chars_per_line;
+            if (end_pos > text_line.length()) {
+                end_pos = text_line.length();
+            } else {
+                // Try to find a space to break at
+                size_t space_pos = text_line.find_last_of(" ", end_pos);
+                if (space_pos != std::string::npos && space_pos > pos) {
+                    end_pos = space_pos;
+                }
+            }
+            
+            std::string sub_line = text_line.substr(pos, end_pos - pos);
+            cv::putText(text_section, sub_line, cv::Point(start_x, start_y + line_count * line_height), 
+                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
+            
+            pos = end_pos;
+            if (pos < text_line.length() && text_line[pos] == ' ') {
+                pos++; // Skip the space
+            }
+            line_count++;
+        }
+    }
+    
+    // Combine the frame and text section
+    cv::vconcat(display_frame, text_section, display_frame);
 }
 
 static int eval_message(mtmd_cli_context & ctx, common_chat_msg & msg, const cv::Mat & frame, bool add_bos = false) {
@@ -252,7 +322,7 @@ static int eval_message(mtmd_cli_context & ctx, common_chat_msg & msg, const cv:
     text.text          = formatted_chat.prompt;
     text.add_special   = add_bos;
     text.parse_special = true;
-    LOG("[ByJunil] text.text: %s\n", text.text.c_str());
+    //LOG("[ByJunil] text.text: %s\n", text.text.c_str());
     mtmd_input_chunks chunks;
 
     if (g_is_interrupted) return 0;
@@ -267,7 +337,7 @@ static int eval_message(mtmd_cli_context & ctx, common_chat_msg & msg, const cv:
     // Or manage n_past carefully if we want context carry-over (more complex)
     // For simplicity, let's reset n_past and clear KV cache for each frame.
     ctx.n_past = 0;
-    llama_kv_cache_clear(ctx.lctx);
+    llama_kv_self_clear(ctx.lctx); // Updated from deprecated llama_kv_cache_clear
 
     if (mtmd_helper_eval(ctx.ctx_vision.get(), ctx.lctx, chunks, ctx.n_past, 0, ctx.n_batch)) {
         LOG_ERR("Unable to eval prompt\n");
@@ -302,7 +372,7 @@ static int eval_message(mtmd_cli_context & ctx, common_chat_msg & msg, std::vect
     text.text          = formatted_chat.prompt;
     text.add_special   = add_bos;
     text.parse_special = true;
-    LOG("[ByJunil] text.text: %s\n", text.text.c_str());
+    //LOG("[ByJunil] text.text: %s\n", text.text.c_str());
     mtmd_input_chunks chunks;
 
     if (g_is_interrupted) return 0;
@@ -393,6 +463,20 @@ int main(int argc, char ** argv) {
 
         cv::Mat frame;
         cv::namedWindow("Webcam Preview", cv::WINDOW_AUTOSIZE);
+        
+        // Store the generated text
+        std::string generated_text = "ASSISTANT: ";
+        
+        // Flag to track if we're currently processing a frame
+        bool processing_frame = false;
+        // Time tracking for frame processing
+        auto last_process_time = std::chrono::steady_clock::now();
+        // Minimum time between processing frames (in milliseconds)
+        const int min_process_interval = 2000; // 2 seconds
+        
+        // Store the last processed frame for display
+        cv::Mat last_processed_frame;
+        bool has_processed_frame = false;
 
         while (!g_is_interrupted) {
             cap >> frame; // Capture a new frame
@@ -402,35 +486,97 @@ int main(int argc, char ** argv) {
                 continue;
             }
 
-            cv::imshow("Webcam Preview", frame);
-
-            // Prepare message
-            common_chat_msg msg;
-            msg.role = "user";
-            msg.content = default_prompt; // Use the same prompt for each frame
-
-            g_is_generating = true;
-            LOG("\nProcessing frame...\n");
-            int eval_ret = eval_message(ctx, msg, frame, true); // Use the overloaded eval_message
-            g_is_generating = false; // Mark generation phase started
-
-            if (eval_ret != 0) {
-                 LOG_ERR("Error evaluating frame: %d\n", eval_ret);
-                 // Decide how to handle eval errors, maybe continue?
-                 if (cv::waitKey(30) >= 0) break; // Check for exit key press
-                 continue; // Try next frame
+            // Create a display frame with horizontal split
+            cv::Mat display_frame;
+            
+            // If we have a processed frame, create a horizontally split top section
+            if (has_processed_frame) {
+                // Resize both frames to the same height for horizontal concatenation
+                int target_height = frame.rows;
+                int target_width = frame.cols;
+                
+                cv::Mat resized_live = frame.clone();
+                cv::Mat resized_processed = last_processed_frame.clone();
+                
+                // Create the top section with horizontal split
+                cv::Mat top_section;
+                cv::hconcat(resized_live, resized_processed, top_section);
+                
+                // Add text section at the bottom
+                int text_height = 150; // Height of the text section
+                cv::Mat text_section(text_height, top_section.cols, CV_8UC3, cv::Scalar(0, 0, 0));
+                
+                // Add the generated text to the text section with word wrapping
+                update_display_with_text(text_section, generated_text);
+                
+                // Combine the top section and text section
+                cv::vconcat(top_section, text_section, display_frame);
+            } else {
+                // If we don't have a processed frame yet, just show the live feed with text
+                // Create a copy of the frame to add text
+                display_frame = frame.clone();
+                
+                // Add text section at the bottom
+                int text_height = 150; // Height of the text section
+                cv::Mat text_section(text_height, frame.cols, CV_8UC3, cv::Scalar(0, 0, 0));
+                
+                // Add the generated text to the text section with word wrapping
+                update_display_with_text(text_section, generated_text);
+                
+                // Combine the frame and text section
+                cv::vconcat(display_frame, text_section, display_frame);
             }
+            
+            // Show the combined image
+            cv::imshow("Webcam Preview", display_frame);
+            
+            // Check if it's time to process a new frame
+            auto current_time = std::chrono::steady_clock::now();
+            auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                current_time - last_process_time).count();
+            
+            // Process a new frame if we're not already processing and enough time has passed
+            if (!processing_frame && elapsed_ms >= min_process_interval) {
+                // Store the current frame for processing
+                last_processed_frame = frame.clone();
+                
+                // Prepare message
+                common_chat_msg msg;
+                msg.role = "user";
+                msg.content = default_prompt; // Use the same prompt for each frame
 
-            printf("ASSISTANT: ");
-            fflush(stdout);
+                g_is_generating = true;
+                LOG("\nProcessing frame...\n");
+                processing_frame = true;
+                last_process_time = current_time;
+                
+                int eval_ret = eval_message(ctx, msg, frame, true); // Use the overloaded eval_message
+                g_is_generating = false; // Mark generation phase started
 
-            g_is_generating = true;
-            if (generate_response(ctx, smpl, n_predict)) {
-                 LOG_ERR("Error generating response\n");
-                 // Decide how to handle generation errors
-                 // return 1; // Or break/continue
+                if (eval_ret != 0) {
+                     LOG_ERR("Error evaluating frame: %d\n", eval_ret);
+                     processing_frame = false;
+                     // Decide how to handle eval errors, maybe continue?
+                     if (cv::waitKey(30) >= 0) break; // Check for exit key press
+                     continue; // Try next frame
+                }
+
+                printf("ASSISTANT: ");
+                fflush(stdout);
+                
+                // Clear the generated text for a new response
+                generated_text = "ASSISTANT: ";
+
+                g_is_generating = true;
+                if (generate_response(ctx, smpl, n_predict, generated_text, display_frame)) {
+                     LOG_ERR("Error generating response\n");
+                     // Decide how to handle generation errors
+                     // return 1; // Or break/continue
+                }
+                g_is_generating = false;
+                processing_frame = false;
+                has_processed_frame = true;
             }
-            g_is_generating = false;
 
             // Check for key press to exit (e.g., ESC key)
             int key = cv::waitKey(30); // Wait for 30ms
@@ -444,16 +590,16 @@ int main(int argc, char ** argv) {
         cv::destroyAllWindows();
 
     } else if (is_single_turn) {
-        LOG("[ByJunil] is_single_turn: %d\n", is_single_turn);
+        //LOG("[ByJunil] is_single_turn: %d\n", is_single_turn);
         g_is_generating = true;
         if (params.prompt.find("<__image__>") == std::string::npos) {
             params.prompt += " <__image__>";
         } else 
         {
-            LOG("[ByJunil] params.prompt contains <__image__>\n");
+            //LOG("[ByJunil] params.prompt contains <__image__>\n");
       }
         //Print params.prompt
-        LOG("[ByJunil] params.prompt: %s\n", params.prompt.c_str());
+        //LOG("[ByJunil] params.prompt: %s\n", params.prompt.c_str());
         for (auto & image : params.image) {
             LOG("[ByJunil] params.image: %s\n", image.c_str());
         }
@@ -463,7 +609,10 @@ int main(int argc, char ** argv) {
         if (eval_message(ctx, msg, params.image, true)) {
             return 1;
         }
-        if (!g_is_interrupted && generate_response(ctx, smpl, n_predict)) {
+        
+        std::string generated_text;
+        cv::Mat dummy_frame; // Dummy frame for single turn mode
+        if (!g_is_interrupted && generate_response(ctx, smpl, n_predict, generated_text, dummy_frame)) {
             return 1;
         }
 
@@ -522,7 +671,10 @@ int main(int argc, char ** argv) {
             if (ret) {
                 return 1;
             }
-            if (generate_response(ctx, smpl, n_predict)) {
+            
+            // Create a dummy frame for text display
+            cv::Mat dummy_frame;
+            if (generate_response(ctx, smpl, n_predict, content, dummy_frame)) {
                 return 1;
             }
             images_fname.clear();
