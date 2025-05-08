@@ -38,6 +38,13 @@
 #include <vector>
 #include <filesystem>
 
+#if 1 //Temporary patch
+#include <avahi-common/simple-watch.h>
+#include <avahi-common/malloc.h>
+#include <avahi-client/client.h>
+#include <avahi-client/publish.h>
+#endif
+
 namespace fs = std::filesystem;
 
 // NOTE: this is copied from common.cpp to avoid linking with libcommon
@@ -161,6 +168,66 @@ static void print_usage(int /*argc*/, char ** argv, rpc_server_params params) {
     fprintf(stderr, "  -m MEM,  --mem MEM        backend memory size (in MB)\n");
     fprintf(stderr, "  -c,      --cache          enable local file cache\n");
     fprintf(stderr, "\n");
+}
+
+static void create_services(AvahiClient *client)
+{
+    AvahiEntryGroup *group = NULL;
+    int retval;
+
+    group = avahi_entry_group_new(client, NULL, NULL);
+    if (!group) {
+        fprintf(stderr, "Could not create entry group");
+        return;
+    }
+
+    const char *name = "llm-rpc";
+    const char *type = "_llm._rpc";
+    uint16_t port = 50054;
+
+    avahi_entry_group_reset(group);
+    retval = avahi_entry_group_add_service(group, AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC, AVAHI_PUBLISH_USE_MULTICAST, name, type, NULL, NULL, port, NULL);
+    if (retval != 0) {
+        fprintf(stderr, "Failed to add service: %d\n", retval);
+        return;
+    }
+
+    if (avahi_entry_group_is_empty(group)) {
+        retval = avahi_entry_group_commit(group);
+        if (retval != 0) {
+            fprintf(stderr, "Failed to commit entry group: %d\n", retval);
+            return;
+        }
+    }
+}
+
+static void client_callback(AvahiClient *client, AvahiClientState state, void *userdata) {
+    switch (state) {
+        case AVAHI_CLIENT_S_RUNNING:
+            printf("Avahi client is running.\n");
+            // Add service creation logic here if needed
+            create_services(client);
+            break;
+
+        case AVAHI_CLIENT_FAILURE:
+            fprintf(stderr, "Avahi client failure: %d\n", avahi_client_errno(client));
+            // Handle failure (e.g., cleanup and exit)
+            exit(1);
+            break;
+
+        case AVAHI_CLIENT_S_COLLISION:
+            printf("Avahi client name collision detected.\n");
+            // Handle name collision
+            break;
+
+        case AVAHI_CLIENT_S_REGISTERING:
+            printf("Avahi client is registering.\n");
+            break;
+
+        default:
+            printf("Avahi client state changed: %d\n", state);
+            break;
+    }
 }
 
 static bool rpc_server_params_parse(int argc, char ** argv, rpc_server_params & params) {
@@ -297,6 +364,23 @@ int main(int argc, char * argv[]) {
         }
         cache_dir = cache_dir_str.c_str();
     }
+#if 1
+    AvahiClient *client = NULL;
+    AvahiSimplePoll *poll = avahi_simple_poll_new();
+    if (!poll) {
+        fprintf(stderr, "Failed to create Avahi simple poll object.\n");
+        return 1;
+    }
+
+    int error;
+    client = avahi_client_new(avahi_simple_poll_get(poll), AVAHI_CLIENT_NO_FAIL, client_callback, NULL, &error);
+    if (!client) {
+        fprintf(stderr, "Failed to create Avahi client: %d", error);
+        return 1;
+    }
+#endif
+
+
     printf("Starting RPC server\n");
     printf("  endpoint       : %s\n", endpoint.c_str());
     printf("  local cache    : %s\n", cache_dir ? cache_dir : "n/a");
