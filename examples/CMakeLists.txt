@@ -70,4 +70,9 @@ else()
             add_subdirectory(sycl)
         endif()
     endif()
+    
+    # Add llama-dbus directory
+    if (NOT WIN32)
+        add_subdirectory(llama-dbus)
+    endif()
 endif()
