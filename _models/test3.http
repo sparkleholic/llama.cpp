@@ -1,0 +1,119 @@
+POST http://localhost:8080/v1/chat/completions
+Authorization: Bearer hf_xxxx
+Content-Type: application/json
+
+{
+    "stop": [
+        ". ", "\n\n", ", "
+    ],
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant. Please answer the user's questions based on the image provided if image is available. If the image is available, please answer in a concise and informative manner in one complete and very short sentence. If the image is not available, please answer the question based on your knowledge. If tools are available, please use them to answer the question. # Tools - read_query: Execute a SELECT query on the SQLite database - write_query: Execute an INSERT, UPDATE, or DELETE query on the SQLite database - create_table: Create a new table in the SQLite database - describe_table: Get the schema information for a specific table - append_insight: Add a business insight to the memo # Notes - Ensure responses are based on the latest information available from function calls. - Maintain an engaging, supportive, and friendly tone throughout the dialogue. - Always highlight the potential of available tools to assist users comprehensively.\n- One sentence only, make it natural and finalized. (under 128 tokens).\n- Do not use any emojis, emoticons, or special characters."
+        },
+        {
+            "role": "user",
+            "content": "Create a database table named 'employees' with columns 'id', 'name', and 'position'. and Fill it with the following data: (1, 'Alice', 'Manager'), (2, 'Bob', 'Developer'), (3, 'Charlie', 'Designer')."
+        }
+    ],
+    "model": "gpt-4o",
+    "max_tokens": 128,
+    "temperature": 0,
+    "tools": [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_query",
+                "description": "Execute a SELECT query on the SQLite database",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "SELECT SQL query to execute"
+                        }
+                    },
+                    "required": [
+                        "query"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "write_query",
+                "description": "Execute an INSERT, UPDATE, or DELETE query on the SQLite database",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "SQL query to execute"
+                        }
+                    },
+                    "required": [
+                        "query"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "create_table",
+                "description": "Create a new table in the SQLite database",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "CREATE TABLE SQL statement"
+                        }
+                    },
+                    "required": [
+                        "query"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "describe_table",
+                "description": "Get the schema information for a specific table",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "table_name": {
+                            "type": "string",
+                            "description": "Name of the table to describe"
+                        }
+                    },
+                    "required": [
+                        "table_name"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "append_insight",
+                "description": "Add a business insight to the memo",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "insight": {
+                            "type": "string",
+                            "description": "Business insight discovered from data analysis"
+                        }
+                    },
+                    "required": [
+                        "insight"
+                    ]
+                }
+            }
+        }
+    ]
+}

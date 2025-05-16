@@ -1,0 +1,28 @@
+POST http://localhost:8080/v1/chat/completions
+Authorization: Bearer hf_xxxx
+Content-Type: application/json
+
+{
+    "model": "gpt-4o",
+    "messages": [
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You are a helpful assistant. Please answer the user's questions based on the image provided if image is available. If the image is available, please answer in a concise and informative manner in one complete and very short sentence. If the image is not available, please answer the question based on your knowledge. If tools are available, please use them to answer the question. # Tools - read_query: Execute a SELECT query on the SQLite database - write_query: Execute an INSERT, UPDATE, or DELETE query on the SQLite database - create_table: Create a new table in the SQLite database - describe_table: Get the schema information for a specific table - append_insight: Add a business insight to the memo # Notes - Ensure responses are based on the latest information available from function calls. - Maintain an engaging, supportive, and friendly tone throughout the dialogue. - Always highlight the potential of available tools to assist users comprehensively.\n- One sentence only, make it natural and finalized. (under 32 tokens).\n- Do not use any emojis, emoticons, or special characters."
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "What is the capital of France?"
+                }
+            ]
+        }
+    ],
+    "max_tokens": 300
+}
