@@ -1,0 +1,48 @@
+# #AGX ORIN Devkit
+# POST http://10.177.123.66:8888/v1/chat/completions
+# Authorization: Bearer hf_xxxx
+# Content-Type: application/json
+
+
+#nano-ai (QCS8550)
+POST http://10.177.124.98:8888/v1/chat/completions
+Authorization: Bearer hf_xxxx
+Content-Type: application/json
+
+{
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Analyze images from <start_of_image> till <end_of_image> and make a summary as one phrase."
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "http://10.177.124.88:5500/output_images2/image_1.jpg"
+                    },
+                    "detail": "low"
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "http://10.177.124.88:5500/output_images2/image_2.jpg"
+                    },
+                    "detail": "low"
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "http://10.177.124.88:5500/output_images2/image_3.jpg"
+                    },
+                    "detail": "low"
+                }
+            ]
+        }
+    ],
+    "model": "gemma3",
+    "stream": false,
+    "max_tokens": 1024
+}
