@@ -1,0 +1,24 @@
+[
+  {
+    "type": "embedding",
+    "name": "text-embedding-small",
+    "model": "/hdd/Project/llama.cpp/_models/hyperclovax-seed-text-instruct-1.5b-q4_k_m.gguf"
+  },
+  {
+    "type": "llm", 
+    "name": "qwen-vl-3b",
+    "model": "/hdd/Project/llama.cpp/_models/Qwen2.5-VL-3B-Instruct-q4_k_m.gguf"
+  },
+  {
+    "type": "multimodal",
+    "name": "qwen-vl-3b-mm",
+    "model": "/hdd/Project/llama.cpp/_models/Qwen2.5-VL-3B-Instruct-q4_k_m.gguf",
+    "mmproj": "/hdd/Project/llama.cpp/_models/Qwen2.5-VL-3B-Instruct-mmproj-f16.gguf"
+  },
+  {
+    "type": "multimodal",
+    "name": "smolvlm-500m",
+    "model": "/hdd/Project/llama.cpp/_models/SmolVLM-500M-Instruct-Q8_0.gguf",
+    "mmproj": "/hdd/Project/llama.cpp/_models/mmproj-SmolVLM-500M-Instruct-Q8_0.gguf"
+  }
+]
