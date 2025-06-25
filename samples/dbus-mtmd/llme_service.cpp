@@ -222,6 +222,7 @@ std::string LlmeService::queryImage(const std::string& model_id, const std::stri
     const auto& m = it->second;
 
     llama_model_params model_params = llama_model_default_params();
+    model_params.n_gpu_layers = 99; // GPU 레이어 수 설정 (모든 레이어를 GPU로)
     llama_model* model = llama_model_load_from_file(m.model.c_str(), model_params);
     if (!model) return "";
     mtmd_context_params ctx_params = mtmd_context_params_default();
@@ -242,6 +243,7 @@ std::string LlmeService::queryImage(const std::string& model_id, const std::stri
 
     llama_context_params lctx_params = llama_context_default_params();
     lctx_params.n_ctx = 4096; // 컨텍스트 크기 설정
+    lctx_params.n_batch = 512; // 배치 크기 설정
     llama_context* lctx = llama_init_from_model(model, lctx_params);
     if (!lctx) { mtmd_bitmap_free(bitmap); mtmd_input_chunks_free(chunks); mtmd_free(mmctx); llama_model_free(model); return ""; }
 
