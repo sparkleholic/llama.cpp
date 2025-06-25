@@ -231,8 +231,8 @@ std::string LlmeService::queryImage(const std::string& model_id, const std::stri
     mtmd_bitmap* bitmap = mtmd_helper_bitmap_init_from_file(mmctx, image_path.c_str());
     if (!bitmap) { mtmd_free(mmctx); llama_model_free(model); return ""; }
 
-    // 올바른 이미지 마커를 사용한 프롬프트 구성
-    std::string prompt_with_marker = "<|im_start|>user\nDescribe this image: <__image__><|im_end|>\n<|im_start|>assistant\n";
+    // Qwen-VL에 맞는 챗 템플릿 형식 사용 
+    std::string prompt_with_marker = "<|im_start|>user\n<__media__>" + text + "<|im_end|>\n<|im_start|>assistant\n";
     mtmd_input_text input_text = { prompt_with_marker.c_str(), true, true };
     mtmd_input_chunks* chunks = mtmd_input_chunks_init();
     const mtmd_bitmap* bitmaps[1] = { bitmap };
@@ -246,7 +246,7 @@ std::string LlmeService::queryImage(const std::string& model_id, const std::stri
     if (!lctx) { mtmd_bitmap_free(bitmap); mtmd_input_chunks_free(chunks); mtmd_free(mmctx); llama_model_free(model); return ""; }
 
     llama_pos n_past = 0;
-    int32_t rc = mtmd_helper_eval_chunks(mmctx, lctx, chunks, n_past, 0, 1, false, &n_past);
+    int32_t rc = mtmd_helper_eval_chunks(mmctx, lctx, chunks, n_past, 0, 1, true, &n_past);
     if (rc != 0) { llama_free(lctx); mtmd_bitmap_free(bitmap); mtmd_input_chunks_free(chunks); mtmd_free(mmctx); llama_model_free(model); return ""; }
 
     // 개선된 샘플링: 더 많은 토큰 생성, 디버그 출력 추가

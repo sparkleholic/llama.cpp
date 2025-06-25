@@ -22,8 +22,8 @@ int main() {
                   << " (type: " << model["type"].get<std::string>() << ")" << std::endl;
     }
     
-    // 멀티모달 모델 로드 (SmolVLM 사용해보기)
-    std::string model_name = "smolvlm-500m";
+    // 멀티모달 모델 로드 (Qwen2.5-VL 사용해보기)
+    std::string model_name = "qwen-vl-3b-mm";
     std::cout << "\nLoading model: " << model_name << std::endl;
     auto load_result = service.load(model_name);
     
