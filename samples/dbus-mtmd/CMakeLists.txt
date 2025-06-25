@@ -24,3 +24,11 @@ target_link_libraries(dbus-mtmd
     mtmd
     ${SDBUSCPP_LIBRARIES}
 )
+
+# Test executable for queryImage
+add_executable(test_queryimage test_queryimage.cpp llme_service.cpp)
+target_link_libraries(test_queryimage
+    llama
+    mtmd
+    ${SDBUSCPP_LIBRARIES}
+)
