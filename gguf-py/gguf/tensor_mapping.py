@@ -290,7 +290,7 @@ class TensorNameMap:
 
         # Post feed-forward norm
         MODEL_TENSOR.FFN_POST_NORM: (
-            "model.layers.{bid}.post_feedforward_layernorm", # gemma2 olmo2
+            "model.layers.{bid}.post_feedforward_layernorm", # gemma2 olmo2 exaone4
             "model.layers.{bid}.post_mlp_layernorm", # glm-4-0414
         ),
 
@@ -452,7 +452,7 @@ class TensorNameMap:
         MODEL_TENSOR.ATTN_Q_NORM: (
             "language_model.encoder.layers.{bid}.self_attention.q_layernorm",
             "model.layers.{bid}.self_attn.q_layernorm",                       # persimmon
-            "model.layers.{bid}.self_attn.q_norm",                            # cohere olmoe chameleon olmo2
+            "model.layers.{bid}.self_attn.q_norm",                            # cohere olmoe chameleon olmo2 exaone4
             "transformer.blocks.{bid}.attn.q_ln",                             # sea-lion
             "encoder.layer.{bid}.attention.self.layer_norm_q",                # jina-bert-v2
             "transformer.layers.{bid}.attn.q_norm",                           # openelm
@@ -461,7 +461,7 @@ class TensorNameMap:
         MODEL_TENSOR.ATTN_K_NORM: (
             "language_model.encoder.layers.{bid}.self_attention.k_layernorm",
             "model.layers.{bid}.self_attn.k_layernorm",                       # persimmon
-            "model.layers.{bid}.self_attn.k_norm",                            # cohere olmoe chameleon olmo2
+            "model.layers.{bid}.self_attn.k_norm",                            # cohere olmoe chameleon olmo2 exaone4
             "transformer.blocks.{bid}.attn.k_ln",                             # sea-lion
             "encoder.layer.{bid}.attention.self.layer_norm_k",                # jina-bert-v2
             "transformer.layers.{bid}.attn.k_norm",                           # openelm

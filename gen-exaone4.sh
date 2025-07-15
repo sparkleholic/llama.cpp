@@ -1,0 +1,2 @@
+python ./convert_hf_to_gguf.py --outfile /mnt/hdd/models/EXAONE-4.0-1.2B-bf16.gguf --outtype bf16 /home/sparkleholic/.cache/huggingface/hub/models--LGAI-EXAONE--EXAONE-4.0-1.2B/snapshots/e1bc152ddee871e02a4b91826a700898686c2012/
+#python ./convert_hf_to_gguf.py --outfile /mnt/hdd/models/EXAONE-4.0-1.2B-f32.gguf --outtype f32 /home/sparkleholic/.cache/huggingface/hub/models--LGAI-EXAONE--EXAONE-4.0-1.2B/snapshots/e1bc152ddee871e02a4b91826a700898686c2012/
