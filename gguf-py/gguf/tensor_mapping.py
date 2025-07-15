@@ -168,7 +168,7 @@ class TensorNameMap:
 
         # Attention query
         MODEL_TENSOR.ATTN_Q: (
-            "model.layers.{bid}.self_attn.q_proj",                       # llama-hf nemotron olmoe olmo2 phimoe
+            "model.layers.{bid}.self_attn.q_proj",                       # llama-hf nemotron olmoe olmo2 phimoe exaone4
             "model.layers.{bid}.self_attn.q_proj_no_perm",               # llama-custom
             "layers.{bid}.attention.wq",                                 # llama-pth
             "encoder.layer.{bid}.attention.self.query",                  # bert
@@ -183,7 +183,7 @@ class TensorNameMap:
 
         # Attention key
         MODEL_TENSOR.ATTN_K: (
-            "model.layers.{bid}.self_attn.k_proj",                     # llama-hf nemotron olmoe olmo2 phimoe
+            "model.layers.{bid}.self_attn.k_proj",                     # llama-hf nemotron olmoe olmo2 phimoe exaone4
             "model.layers.{bid}.self_attn.k_proj_no_perm",             # llama-custom
             "layers.{bid}.attention.wk",                               # llama-pth
             "encoder.layer.{bid}.attention.self.key",                  # bert
@@ -199,7 +199,7 @@ class TensorNameMap:
 
         # Attention value
         MODEL_TENSOR.ATTN_V: (
-            "model.layers.{bid}.self_attn.v_proj",                       # llama-hf nemotron olmoe olmo2 phimoe
+            "model.layers.{bid}.self_attn.v_proj",                       # llama-hf nemotron olmoe olmo2 phimoe exaone4
             "layers.{bid}.attention.wv",                                 # llama-pth
             "encoder.layer.{bid}.attention.self.value",                  # bert
             "transformer.layer.{bid}.attention.v_lin",                   # distillbert
@@ -219,7 +219,7 @@ class TensorNameMap:
             "transformer.blocks.{bid}.attn.out_proj",                       # mpt
             "transformer.h.{bid}.self_attention.dense",                     # falcon
             "h.{bid}.self_attention.dense",                                 # bloom
-            "model.layers.{bid}.self_attn.o_proj",                          # llama-hf nemotron olmoe olmo2 phimoe
+            "model.layers.{bid}.self_attn.o_proj",                          # llama-hf nemotron olmoe olmo2 phimoe exaone4
             "model.layers.{bid}.self_attn.linear_attn",                     # deci
             "layers.{bid}.attention.wo",                                    # llama-pth
             "encoder.layer.{bid}.attention.output.dense",                   # bert
@@ -252,7 +252,7 @@ class TensorNameMap:
         ),
 
         MODEL_TENSOR.ATTN_POST_NORM: (
-            "model.layers.{bid}.post_attention_layernorm",     # gemma2 olmo2    # ge
+            "model.layers.{bid}.post_attention_layernorm",     # gemma2 olmo2    # ge #exaone4
             "model.layers.{bid}.post_self_attn_layernorm",     # glm-4-0414
         ),
 
@@ -320,7 +320,7 @@ class TensorNameMap:
             "transformer.blocks.{bid}.ffn.up_proj",                   # mpt
             "transformer.h.{bid}.mlp.dense_h_to_4h",                  # falcon
             "h.{bid}.mlp.dense_h_to_4h",                              # bloom
-            "model.layers.{bid}.mlp.up_proj",                         # llama-hf refact nemotron olmo2
+            "model.layers.{bid}.mlp.up_proj",                         # llama-hf refact nemotron olmo2 exaone4
             "layers.{bid}.feed_forward.w3",                           # llama-pth
             "encoder.layer.{bid}.intermediate.dense",                 # bert
             "transformer.layer.{bid}.ffn.lin1",                       # distillbert
@@ -371,7 +371,7 @@ class TensorNameMap:
 
         # Feed-forward gate
         MODEL_TENSOR.FFN_GATE: (
-            "model.layers.{bid}.mlp.gate_proj",           # llama-hf refact olmo2
+            "model.layers.{bid}.mlp.gate_proj",           # llama-hf refact olmo2 exaone4
             "layers.{bid}.feed_forward.w1",               # llama-pth
             "transformer.h.{bid}.mlp.w2",                 # qwen
             "transformer.h.{bid}.mlp.c_fc2",              # jais
@@ -404,7 +404,7 @@ class TensorNameMap:
         MODEL_TENSOR.FFN_DOWN: (
             "gpt_neox.layers.{bid}.mlp.dense_4h_to_h",                # gptneox
             "transformer.h.{bid}.mlp.c_proj",                         # gpt2 refact qwen jais
-            "transformer.blocks.{bid}.ffn.down_proj",                 # mpt
+            "transformer.blocks.{bid}.ffn.down_proj",                 # mpt exaone4
             "transformer.h.{bid}.mlp.dense_4h_to_h",                  # falcon
             "h.{bid}.mlp.dense_4h_to_h",                              # bloom
             "model.layers.{bid}.mlp.down_proj",                       # llama-hf nemotron olmo2
