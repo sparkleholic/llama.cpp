@@ -21,6 +21,20 @@
 extern "C" {
 #endif
 
+    /**
+     * @file ggml-backend.h
+     * @brief GGML Backend API - Device abstraction layer
+     * 
+     * The GGML Backend API provides:
+     * - Device management (CPU, CUDA, Metal, OpenCL, etc.)
+     * - Memory allocation and buffer management
+     * - Compute graph execution and scheduling
+     * - Cross-device operations and data transfer
+     * 
+     * @defgroup ggml_backend_api GGML Backend API
+     * @{
+     */
+
     typedef struct ggml_backend_buffer_type * ggml_backend_buffer_type_t;
     typedef struct ggml_backend_buffer * ggml_backend_buffer_t;
     typedef struct ggml_backend_event * ggml_backend_event_t;
@@ -348,6 +362,8 @@ extern "C" {
     // CPU buffer types are always available
     GGML_API ggml_backend_buffer_t      ggml_backend_cpu_buffer_from_ptr(void * ptr, size_t size);
     GGML_API ggml_backend_buffer_type_t ggml_backend_cpu_buffer_type(void);
+
+    /** @} */ // end of ggml_backend_api group
 
 #ifdef  __cplusplus
 }

@@ -45,6 +45,25 @@
 extern "C" {
 #endif
 
+/**
+ * @file mtmd.h
+ * @brief MTMD (Multimodal) API - Vision and audio processing
+ * 
+ * libmtmd: A library for multimodal support in llama.cpp.
+ * 
+ * WARNING: This API is experimental and subject to many BREAKING CHANGES.
+ *          Issues related to API usage may receive lower priority support.
+ * 
+ * The MTMD API provides:
+ * - Vision processing and image understanding
+ * - Audio processing and speech analysis  
+ * - Bitmap and image manipulation utilities
+ * - Multimodal context integration with llama.cpp
+ * 
+ * @defgroup mtmd_api MTMD Multimodal API
+ * @{
+ */
+
 enum mtmd_input_chunk_type {
     MTMD_INPUT_CHUNK_TYPE_TEXT,
     MTMD_INPUT_CHUNK_TYPE_IMAGE,
@@ -214,6 +233,8 @@ MTMD_API float * mtmd_get_output_embd(mtmd_context * ctx);
 
 // test function, to be used in test-mtmd-c-api.c
 MTMD_API mtmd_input_chunks * mtmd_test_create_input_chunks(void);
+
+/** @} */ // end of mtmd_api group
 
 #ifdef __cplusplus
 } // extern "C"

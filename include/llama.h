@@ -51,6 +51,21 @@
 extern "C" {
 #endif
 
+    /**
+     * @file llama.h
+     * @brief llama.cpp C API
+     * 
+     * This file contains the main C API for llama.cpp, providing functions for:
+     * - Model loading and management
+     * - Context creation and manipulation
+     * - Text tokenization and detokenization
+     * - Inference and sampling
+     * - Memory and state management
+     * 
+     * @defgroup llama_api llama.cpp API
+     * @{
+     */
+
     //
     // C interface
     //
@@ -256,6 +271,12 @@ extern "C" {
         ggml_backend_buffer_type_t buft;
     };
 
+    /**
+     * @brief Model loading parameters
+     * 
+     * Configuration for loading and setting up llama models, including
+     * GPU offloading, memory management, and device selection.
+     */
     struct llama_model_params {
         // NULL-terminated list of devices to use for offloading (if NULL, all available devices are used)
         ggml_backend_dev_t * devices;
@@ -290,8 +311,16 @@ extern "C" {
         bool check_tensors; // validate model tensor data
     };
 
-    // NOTE: changing the default values of parameters marked as [EXPERIMENTAL] may cause crashes or incorrect results in certain configurations
-    //       https://github.com/ggml-org/llama.cpp/pull/7544
+    /**
+     * @brief Context creation and inference parameters
+     * 
+     * Configuration for creating llama contexts, controlling inference behavior,
+     * memory usage, threading, and various experimental features.
+     * 
+     * NOTE: changing the default values of parameters marked as [EXPERIMENTAL] 
+     *       may cause crashes or incorrect results in certain configurations
+     *       https://github.com/ggml-org/llama.cpp/pull/7544
+     */
     struct llama_context_params {
         uint32_t n_ctx;             // text context, 0 = from model
         uint32_t n_batch;           // logical maximum batch size that can be submitted to llama_decode
@@ -1442,6 +1471,8 @@ extern "C" {
             int64_t                   idata_split,
             ggml_opt_epoch_callback   callback_train,
             ggml_opt_epoch_callback   callback_eval);
+
+    /** @} */ // end of llama_api group
 
 #ifdef __cplusplus
 }

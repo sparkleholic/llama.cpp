@@ -209,6 +209,20 @@
 #include <stdint.h>
 #include <stdio.h>
 
+/**
+ * @file ggml.h
+ * @brief GGML Tensor Library - Core API
+ * 
+ * GGML is a tensor library for machine learning providing:
+ * - Tensor operations and automatic differentiation
+ * - Neural network primitives (attention, convolution, etc.)
+ * - Memory management and graph computation
+ * - Multi-backend support (CPU, GPU, etc.)
+ * 
+ * @defgroup ggml_api GGML Core API
+ * @{
+ */
+
 #define GGML_FILE_MAGIC   0x67676d6c // "ggml"
 #define GGML_FILE_VERSION 2
 
@@ -2399,6 +2413,8 @@ extern "C" {
     GGML_API struct ggml_threadpool_params ggml_threadpool_params_default(int n_threads);
     GGML_API void                          ggml_threadpool_params_init   (struct ggml_threadpool_params * p, int n_threads);
     GGML_API bool                          ggml_threadpool_params_match  (const struct ggml_threadpool_params * p0, const struct ggml_threadpool_params * p1);
+
+    /** @} */ // end of ggml_api group
 
 #ifdef  __cplusplus
 }
