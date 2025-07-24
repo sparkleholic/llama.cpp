@@ -1,0 +1,391 @@
+### Non-reasoning
+POST http://localhost:8080/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "EXAONE-4.0-1.2B",
+  "messages": [
+    {
+      "role": "user",
+      "content": "너가 얼마나 대단한지 설명해 봐"
+    }
+  ],
+  "max_tokens": 128,
+  "temperature": 0.1
+}
+
+### Resoninig
+
+POST http://localhost:8080/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "EXAONE-4.0-1.2B",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Which one is bigger, 3.12 vs 3.9?"
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.1
+}
+
+
+### Agentic tool use
+POST http://localhost:8080/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "EXAONE-4.0-1.2B",
+  "messages": [
+    {
+      "role": "user",
+      "content": "현재 시간과 날씨 정보를 알려줘"
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "tools": [
+    {
+        "type": "function",
+        "function": {
+            "name": "roll_dice",
+            "description": "Roll a dice with the number 1 to N. User can select the number N.",
+            "parameters": {
+                "type": "object",
+                "required": ["max_num"],
+                "properties": {
+                    "max_num": {
+                        "type": "integer",
+                        "description": "Max number of the dice"
+                    }
+                }
+            }
+        }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "compare_numbers",
+        "description": "Compare two numbers and return the larger one.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number1": {
+              "type": "number"
+            },
+            "number2": {
+              "type": "number"
+            }
+          },
+          "required": ["number1", "number2"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_current_time",
+        "description": "Get the current time in ISO format.",
+        "parameters": {}
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the current weather for a given city.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "The name of the city to get the weather for."
+            }
+          },
+          "required": ["city"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "calculate_sum",
+        "description": "Calculate the sum of two numbers.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number1": {
+              "type": "number"
+            },
+            "number2": {
+              "type": "number"
+            }
+          },
+          "required": ["number1", "number2"]
+        }
+      }
+    }
+  ]
+}
+
+
+
+### Follow-up Tool Call Response
+POST http://localhost:8080/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "EXAONE-4.0-1.2B",
+  "messages": [
+    {
+      "role": "user",
+      "content": "현재 시간과 날씨 정보를 알려줘"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_current_time",
+            "arguments": "{}"
+          },
+          "id": "EgeDdDLvcmUAYmylxAqHg4C2LwnybAxc"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "EgeDdDLvcmUAYmylxAqHg4C2LwnybAxc",
+      "content": "2025-07-18 T12:34:56.789Z"
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "tools": [
+    {
+        "type": "function",
+        "function": {
+            "name": "roll_dice",
+            "description": "Roll a dice with the number 1 to N. User can select the number N.",
+            "parameters": {
+                "type": "object",
+                "required": ["max_num"],
+                "properties": {
+                    "max_num": {
+                        "type": "integer",
+                        "description": "Max number of the dice"
+                    }
+                }
+            }
+        }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "compare_numbers",
+        "description": "Compare two numbers and return the larger one.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number1": {
+              "type": "number"
+            },
+            "number2": {
+              "type": "number"
+            }
+          },
+          "required": ["number1", "number2"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_current_time",
+        "description": "Get the current time in ISO format.",
+        "parameters": {}
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the current weather for a given city.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "The name of the city to get the weather for."
+            }
+          },
+          "required": ["city"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "calculate_sum",
+        "description": "Calculate the sum of two numbers.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number1": {
+              "type": "number"
+            },
+            "number2": {
+              "type": "number"
+            }
+          },
+          "required": ["number1", "number2"]
+        }
+      }
+    }
+  ]
+}
+
+
+
+### Second Tool Call Response
+POST http://localhost:8080/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "EXAONE-4.0-1.2B",
+  "messages": [
+    {
+      "role": "user",
+      "content": "현재 시간과 날씨 정보를 알려줘"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_current_time",
+            "arguments": "{}"
+          },
+          "id": "EgeDdDLvcmUAYmylxAqHg4C2LwnybAxc"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "EgeDdDLvcmUAYmylxAqHg4C2LwnybAxc",
+      "content": "2025-07-18 T12:34:56.789Z"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\":\"서울\"}"
+          },
+          "id": "mqkfsO5Pif1fWOTMF9UAsyCLc766KlLj"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "mqkfsO5Pif1fWOTMF9UAsyCLc766KlLj",
+      "content": "서울의 현재 날씨는 맑고 기온은 25도입니다."
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "tools": [
+    {
+        "type": "function",
+        "function": {
+            "name": "roll_dice",
+            "description": "Roll a dice with the number 1 to N. User can select the number N.",
+            "parameters": {
+                "type": "object",
+                "required": ["max_num"],
+                "properties": {
+                    "max_num": {
+                        "type": "integer",
+                        "description": "Max number of the dice"
+                    }
+                }
+            }
+        }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "compare_numbers",
+        "description": "Compare two numbers and return the larger one.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number1": {
+              "type": "number"
+            },
+            "number2": {
+              "type": "number"
+            }
+          },
+          "required": ["number1", "number2"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_current_time",
+        "description": "Get the current time in ISO format.",
+        "parameters": {}
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the current weather for a given city.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "The name of the city to get the weather for."
+            }
+          },
+          "required": ["city"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "calculate_sum",
+        "description": "Calculate the sum of two numbers.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number1": {
+              "type": "number"
+            },
+            "number2": {
+              "type": "number"
+            }
+          },
+          "required": ["number1", "number2"]
+        }
+      }
+    }
+  ]
+}

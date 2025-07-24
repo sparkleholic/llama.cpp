@@ -1,0 +1,391 @@
+### Non-reasoning
+POST http://localhost:8080/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "EXAONE-4.0-1.2B",
+  "messages": [
+    {
+      "role": "user",
+      "content": "너가 얼마나 대단한지 설명해 봐"
+    }
+  ],
+  "max_tokens": 128,
+  "temperature": 0.1
+}
+
+### Resoninig
+
+POST http://localhost:8080/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "EXAONE-4.0-1.2B",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Which one is bigger, 3.12 vs 3.9?"
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.1
+}
+
+
+### Agentic tool use
+POST http://localhost:8080/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "EXAONE-4.0-1.2B",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Roll D6 dice twice!"
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "tools": [
+    {
+        "type": "function",
+        "function": {
+            "name": "roll_dice",
+            "description": "Roll a dice with the number 1 to N. User can select the number N.",
+            "parameters": {
+                "type": "object",
+                "required": ["max_num"],
+                "properties": {
+                    "max_num": {
+                        "type": "integer",
+                        "description": "Max number of the dice"
+                    }
+                }
+            }
+        }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "compare_numbers",
+        "description": "Compare two numbers and return the larger one.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number1": {
+              "type": "number"
+            },
+            "number2": {
+              "type": "number"
+            }
+          },
+          "required": ["number1", "number2"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_current_time",
+        "description": "Get the current time in ISO format.",
+        "parameters": {}
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the current weather for a given city.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "The name of the city to get the weather for."
+            }
+          },
+          "required": ["city"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "calculate_sum",
+        "description": "Calculate the sum of two numbers.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number1": {
+              "type": "number"
+            },
+            "number2": {
+              "type": "number"
+            }
+          },
+          "required": ["number1", "number2"]
+        }
+      }
+    }
+  ]
+}
+
+
+
+### Follow-up Tool Call Response
+POST http://localhost:8080/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "EXAONE-4.0-1.2B",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Roll D6 dice twice!"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "roll_dice",
+            "arguments": "{\"max_num\":6}"
+          },
+          "id": "3GMWcLmiFjgXe1deqFRFsDZndPmwbhQu"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "3GMWcLmiFjgXe1deqFRFsDZndPmwbhQu",
+      "content": "5"
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "tools": [
+    {
+        "type": "function",
+        "function": {
+            "name": "roll_dice",
+            "description": "Roll a dice with the number 1 to N. User can select the number N.",
+            "parameters": {
+                "type": "object",
+                "required": ["max_num"],
+                "properties": {
+                    "max_num": {
+                        "type": "integer",
+                        "description": "Max number of the dice"
+                    }
+                }
+            }
+        }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "compare_numbers",
+        "description": "Compare two numbers and return the larger one.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number1": {
+              "type": "number"
+            },
+            "number2": {
+              "type": "number"
+            }
+          },
+          "required": ["number1", "number2"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_current_time",
+        "description": "Get the current time in ISO format.",
+        "parameters": {}
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the current weather for a given city.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "The name of the city to get the weather for."
+            }
+          },
+          "required": ["city"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "calculate_sum",
+        "description": "Calculate the sum of two numbers.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number1": {
+              "type": "number"
+            },
+            "number2": {
+              "type": "number"
+            }
+          },
+          "required": ["number1", "number2"]
+        }
+      }
+    }
+  ]
+}
+
+
+
+### Second Tool Call Response
+POST http://localhost:8080/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "EXAONE-4.0-1.2B",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Roll D6 dice twice!"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "roll_dice",
+            "arguments": "{\"max_num\":6}"
+          },
+          "id": "3GMWcLmiFjgXe1deqFRFsDZndPmwbhQu"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "3GMWcLmiFjgXe1deqFRFsDZndPmwbhQu",
+      "content": "5"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "type": "function",
+          "function": {
+            "name": "roll_dice",
+            "arguments": "{\"max_num\":6}"
+          },
+          "id": "vuPKzvDZEa5EshaottZk9zJQUsWOjkL9"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "vuPKzvDZEa5EshaottZk9zJQUsWOjkL9",
+      "content": "3"
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "tools": [
+    {
+        "type": "function",
+        "function": {
+            "name": "roll_dice",
+            "description": "Roll a dice with the number 1 to N. User can select the number N.",
+            "parameters": {
+                "type": "object",
+                "required": ["max_num"],
+                "properties": {
+                    "max_num": {
+                        "type": "integer",
+                        "description": "Max number of the dice"
+                    }
+                }
+            }
+        }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "compare_numbers",
+        "description": "Compare two numbers and return the larger one.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number1": {
+              "type": "number"
+            },
+            "number2": {
+              "type": "number"
+            }
+          },
+          "required": ["number1", "number2"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_current_time",
+        "description": "Get the current time in ISO format.",
+        "parameters": {}
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the current weather for a given city.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "The name of the city to get the weather for."
+            }
+          },
+          "required": ["city"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "calculate_sum",
+        "description": "Calculate the sum of two numbers.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number1": {
+              "type": "number"
+            },
+            "number2": {
+              "type": "number"
+            }
+          },
+          "required": ["number1", "number2"]
+        }
+      }
+    }
+  ]
+}
