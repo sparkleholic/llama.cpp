@@ -639,6 +639,7 @@ struct ggml_backend_opencl_context {
     cl_mem A_s_d_max;            // max scale buffer size for transpose
     cl_mem A_q_d_max;            // max weight buffer size for transpose
     cl_mem B_d_max;              // max activation buffer size for transpose
+    size_t A_q_d_max_size;       // actual allocated size for A_q_d_max buffer
 
     // Gemm and Gemv related programs, kernels, etc
     cl_program program_CL_gemm;
@@ -2599,6 +2600,7 @@ static ggml_backend_opencl_context * ggml_cl2_init(ggml_backend_dev_t dev) {
     CL_CHECK((backend_ctx->A_q_d_max = clCreateBuffer(context, 0, max_A_q_d_bytes, NULL, &err), err));
     CL_CHECK((backend_ctx->A_s_d_max = clCreateBuffer(context, 0, max_A_s_d_bytes, NULL, &err), err));
     CL_CHECK((backend_ctx->B_d_max   = clCreateBuffer(context, 0, max_B_d_bytes,   NULL, &err), err));
+    backend_ctx->A_q_d_max_size = max_A_q_d_bytes;
 #endif // GGML_OPENCL_USE_ADRENO_KERNELS
 
     backend_ctx->disable_fusion = getenv("GGML_OPENCL_DISABLE_FUSION") != nullptr;
@@ -3477,8 +3479,22 @@ inline bool use_adreno_kernels(const ggml_backend_opencl_context *backend_ctx, c
         threshold_ne0 = 128;
         threshold_ne1 = 128;
     }
-    return tensor->ne[0] >= threshold_ne0 && tensor->ne[1] >= threshold_ne1 &&
-            tensor->ne[2] == 1 && tensor->ne[3] == 1;
+
+    // Check if tensor dimensions meet minimum thresholds and has no batch
+    if (tensor->ne[0] < threshold_ne0 || tensor->ne[1] < threshold_ne1 ||
+        tensor->ne[2] != 1 || tensor->ne[3] != 1) {
+        return false;
+    }
+
+    // Check if the tensor's transposed weight buffer would fit in the preallocated buffer.
+    // The transposed buffer size is: K * M / 8 * sizeof(float) = ne[0] * ne[1] / 2 bytes
+    // This prevents buffer overflow on devices with smaller max_alloc_size (e.g., Adreno 643).
+    size_t required_q_size = (size_t)tensor->ne[0] * (size_t)tensor->ne[1] / 2;
+    if (required_q_size > backend_ctx->A_q_d_max_size) {
+        return false;
+    }
+
+    return true;
 }
 
 inline bool use_adreno_moe_kernels(const ggml_backend_opencl_context *backend_ctx, const ggml_tensor *tensor) {
