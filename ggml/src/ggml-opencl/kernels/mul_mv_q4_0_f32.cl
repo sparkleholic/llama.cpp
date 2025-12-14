@@ -79,7 +79,9 @@ inline float block_q_4_0_dot_y(
 #elif defined (ADRENO_GPU)
 #define N_DST 4
 #define N_SIMDGROUP 1
+#ifndef N_SIMDWIDTH
 #define N_SIMDWIDTH 64
+#endif
 #endif
 
 inline void mul_vec_q_n_f32(
@@ -165,7 +167,11 @@ inline void mul_vec_q_n_f32(
 #ifdef INTEL_GPU
 REQD_SUBGROUP_SIZE_16
 #elif defined (ADRENO_GPU)
+#if N_SIMDWIDTH == 128
+REQD_SUBGROUP_SIZE_128
+#else
 REQD_SUBGROUP_SIZE_64
+#endif
 #endif
 kernel void kernel_mul_mat_q4_0_f32(
         global void * src0,

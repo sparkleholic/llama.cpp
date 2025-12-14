@@ -92,6 +92,7 @@ enum GPU_FAMILY {
 
 enum ADRENO_GPU_GEN {
     ADRENO_UNKNOWN,
+    A6X,
     A7X,
     A8X,
     X1E,
@@ -220,6 +221,11 @@ static ggml_cl_version get_opencl_c_version(ggml_cl_version platform_version, cl
 }
 
 static ADRENO_GPU_GEN get_adreno_gpu_gen(const char *device_name) {
+    if (strstr(device_name, "643") ||
+        strstr(device_name, "642L")) {
+        return ADRENO_GPU_GEN::A6X;
+    }
+
     if (strstr(device_name, "730") ||
         strstr(device_name, "740") ||
         strstr(device_name, "750")) {
@@ -364,6 +370,9 @@ struct ggml_backend_opencl_context {
     cl_int alignment;
     size_t max_alloc_size;
     size_t max_workgroup_size;
+    size_t image_max_width;
+    size_t image_max_height;
+    size_t image_max_buffer_size;
     bool fp16_support;
     bool has_vector_subgroup_broadcast;
     bool disable_fusion;
@@ -719,7 +728,8 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
         std::string("CL") + std::to_string(opencl_c_version.major) + "." + std::to_string(opencl_c_version.minor);
     std::string compile_opts = std::string("-cl-std=") + opencl_c_std +
                                " -cl-mad-enable -cl-unsafe-math-optimizations"
-                               " -cl-finite-math-only -cl-fast-relaxed-math";
+                               " -cl-finite-math-only -cl-fast-relaxed-math"
+                               " -DN_SIMDWIDTH=" + std::to_string(backend_ctx->adreno_wave_size);
 
     GGML_LOG_INFO("ggml_opencl: loading OpenCL kernels");
 
@@ -2435,8 +2445,11 @@ static ggml_backend_opencl_context * ggml_cl2_init(ggml_backend_dev_t dev) {
             backend_ctx->adreno_gen = get_adreno_gpu_gen(dev_ctx->device_name.c_str());
         }
 
-        // Use wave size of 64 for all Adreno GPUs.
-        backend_ctx->adreno_wave_size = 64;
+        // Use the device's preferred work group size multiple.
+        // This usually corresponds to the wave size (64 or 128).
+        size_t preferred_wg_multiple;
+        clGetDeviceInfo(dev_ctx->device, CL_DEVICE_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(size_t), &preferred_wg_multiple, NULL);
+        backend_ctx->adreno_wave_size = preferred_wg_multiple;
     } else if (strstr(dev_ctx->device_name.c_str(), "Intel")) {
         backend_ctx->gpu_family = GPU_FAMILY::INTEL;
     } else {
@@ -2519,6 +2532,12 @@ static ggml_backend_opencl_context * ggml_cl2_init(ggml_backend_dev_t dev) {
 
     clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &backend_ctx->max_workgroup_size, NULL);
     GGML_LOG_INFO("ggml_opencl: device max workgroup size: %lu\n", backend_ctx->max_workgroup_size);
+
+    clGetDeviceInfo(device, CL_DEVICE_IMAGE2D_MAX_WIDTH, sizeof(size_t), &backend_ctx->image_max_width, NULL);
+    clGetDeviceInfo(device, CL_DEVICE_IMAGE2D_MAX_HEIGHT, sizeof(size_t), &backend_ctx->image_max_height, NULL);
+    clGetDeviceInfo(device, CL_DEVICE_IMAGE_MAX_BUFFER_SIZE, sizeof(size_t), &backend_ctx->image_max_buffer_size, NULL);
+    GGML_LOG_INFO("ggml_opencl: max image size: %zu x %zu, max buffer size: %zu\n", 
+        backend_ctx->image_max_width, backend_ctx->image_max_height, backend_ctx->image_max_buffer_size);
 
     // Check SVM.
     cl_device_svm_capabilities svm_caps;
@@ -2664,6 +2683,8 @@ struct ggml_tensor_extra_cl_q4_0 {
     size_t size_q = 0;
     // Size of scales.
     size_t size_d = 0;
+    // Flag to indicate if the data is in Adreno-optimized layout (Noshuffle + Transposed)
+    bool is_adreno_transposed = false;
 
     ~ggml_tensor_extra_cl_q4_0() {
         reset();
@@ -3477,6 +3498,16 @@ inline bool use_adreno_kernels(const ggml_backend_opencl_context *backend_ctx, c
         threshold_ne0 = 128;
         threshold_ne1 = 128;
     }
+    // Limit optimization to reasonable sizes to avoid Adreno Image Buffer limits.
+    // Adreno hardware limit check:
+    // 1. Total 1D pixel count must be within device limit (CL_DEVICE_IMAGE_MAX_BUFFER_SIZE).
+    // 2. Y-dimension must be within 2D limit (CL_DEVICE_IMAGE2D_MAX_HEIGHT) due to internal driver/kernel mapping.
+    size_t required_image_size = (size_t)tensor->ne[0] * (size_t)tensor->ne[1] / 16;
+    if (required_image_size > backend_ctx->image_max_buffer_size || 
+        tensor->ne[1] > backend_ctx->image_max_height) {
+        return false;
+    }
+
     return tensor->ne[0] >= threshold_ne0 && tensor->ne[1] >= threshold_ne1 &&
             tensor->ne[2] == 1 && tensor->ne[3] == 1;
 }
@@ -3742,6 +3773,7 @@ static void ggml_backend_opencl_buffer_set_tensor(ggml_backend_buffer_t buffer, 
         // <----------------------------------------------------------------------------------> //
         // end transpose
         // <----------------------------------------------------------------------------------> //
+        extra->is_adreno_transposed = true;
         }
     #endif // GGML_OPENCL_USE_ADRENO_KERNELS
 
@@ -7655,11 +7687,19 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         return;
     }
 
-    if (!ggml_is_transposed(src0) &&
-        !ggml_is_transposed(src1) &&
-        src1t == GGML_TYPE_F32 &&
-        ne00%32 == 0 &&
-        ne11 > 2) {
+    bool use_optimized_path = !ggml_is_transposed(src0) &&
+                              !ggml_is_transposed(src1) &&
+                              src1t == GGML_TYPE_F32 &&
+                              ne00%32 == 0 &&
+                              ne11 > 2;
+
+    if (use_optimized_path && src0t == GGML_TYPE_Q4_0 && backend_ctx->gpu_family == ADRENO) {
+        if (!extra0_q4_0 || !extra0_q4_0->is_adreno_transposed) {
+            use_optimized_path = false;
+        }
+    }
+
+    if (use_optimized_path) {
 #ifdef GGML_OPENCL_SOA_Q
         // Set up kernel.
         switch(src0t) {
