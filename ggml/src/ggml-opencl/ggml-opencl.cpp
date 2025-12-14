@@ -640,6 +640,7 @@ struct ggml_backend_opencl_context {
     cl_mem A_q_d_max;            // max weight buffer size for transpose
     cl_mem B_d_max;              // max activation buffer size for transpose
     size_t A_q_d_max_size;       // actual allocated size for A_q_d_max buffer
+    size_t image_max_buffer_size; // max pixels for 1D image from buffer (CL_DEVICE_IMAGE_MAX_BUFFER_SIZE)
 
     // Gemm and Gemv related programs, kernels, etc
     cl_program program_CL_gemm;
@@ -2521,6 +2522,12 @@ static ggml_backend_opencl_context * ggml_cl2_init(ggml_backend_dev_t dev) {
     clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &backend_ctx->max_workgroup_size, NULL);
     GGML_LOG_INFO("ggml_opencl: device max workgroup size: %lu\n", backend_ctx->max_workgroup_size);
 
+#ifdef GGML_OPENCL_USE_ADRENO_KERNELS
+    // Query max pixels for 1D image from buffer (used to check image width limit for large tensors)
+    clGetDeviceInfo(device, CL_DEVICE_IMAGE_MAX_BUFFER_SIZE, sizeof(size_t), &backend_ctx->image_max_buffer_size, NULL);
+    GGML_LOG_INFO("ggml_opencl: image max buffer size: %zu pixels\n", backend_ctx->image_max_buffer_size);
+#endif
+
     // Check SVM.
     cl_device_svm_capabilities svm_caps;
     CL_CHECK(clGetDeviceInfo(device, CL_DEVICE_SVM_CAPABILITIES, sizeof(cl_device_svm_capabilities), &svm_caps, 0));
@@ -3491,6 +3498,15 @@ inline bool use_adreno_kernels(const ggml_backend_opencl_context *backend_ctx, c
     // This prevents buffer overflow on devices with smaller max_alloc_size (e.g., Adreno 643).
     size_t required_q_size = (size_t)tensor->ne[0] * (size_t)tensor->ne[1] / 2;
     if (required_q_size > backend_ctx->A_q_d_max_size) {
+        return false;
+    }
+
+    // Check if the image width for GEMV would exceed CL_DEVICE_IMAGE_MAX_BUFFER_SIZE.
+    // For GEMV (N=1), image format is CL_R CL_UNSIGNED_INT32 (4 bytes/pixel).
+    // Image width = M * K / 2 / 4 = ne[1] * ne[0] / 8 pixels.
+    // This prevents image creation failure on devices with limited image buffer size.
+    size_t required_image_width = (size_t)tensor->ne[0] * (size_t)tensor->ne[1] / 8;
+    if (required_image_width > backend_ctx->image_max_buffer_size) {
         return false;
     }
 
