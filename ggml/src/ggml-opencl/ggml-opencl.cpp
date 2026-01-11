@@ -422,8 +422,6 @@ struct ggml_backend_opencl_context {
     ggml_cl_buffer prealloc_quant_trans;
     ggml_cl_buffer prealloc_scales_trans;
     ggml_cl_buffer prealloc_act_trans;
-    // prealloc buffer for A6X src1 image offset workaround
-    ggml_cl_buffer prealloc_a6x_src1;
 
     cl_program program_add;
     cl_program program_add_id;
@@ -2777,14 +2775,6 @@ static ggml_backend_opencl_context * ggml_cl2_init(ggml_backend_dev_t dev) {
     backend_ctx->prealloc_quant_trans.allocate(context, max_A_q_d_bytes);
     backend_ctx->prealloc_scales_trans.allocate(context, max_A_s_d_bytes);
     backend_ctx->prealloc_act_trans.allocate(context, max_B_d_bytes);
-
-    // Allocate A6X src1 workaround buffer for image offset issue
-    // A6X GPUs have issues with images created from sub-buffers not properly
-    // respecting the sub-buffer offset. This buffer is used to copy src1 data
-    // when there's a non-zero offset.
-    if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
-        backend_ctx->prealloc_a6x_src1.allocate(context, max_B_d_bytes);
-    }
 #endif // GGML_OPENCL_USE_ADRENO_KERNELS
 
     backend_ctx->disable_fusion = getenv("GGML_OPENCL_DISABLE_FUSION") != nullptr;
@@ -7563,8 +7553,10 @@ static void ggml_cl_mul_mat_kq_kqv_adreno(ggml_backend_t backend, const ggml_ten
     int K = ne00;
 
     if (nb01 > nb02) {
+        // KQ
         kernel = backend_ctx->kernel_mul_mm_f16_f32_kq;
     } else {
+        // KQV
         kernel = backend_ctx->kernel_mul_mm_f16_f32_kqv;
     }
     // create sub-buffer for A
@@ -7745,11 +7737,7 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         }
     }
 
-    // A6X GPUs have issues with images created from sub-buffers with non-zero offset.
-    // Skip optimized Adreno kernels and use general path when offset1 is non-zero on A6X.
-    bool skip_adreno_for_a6x = backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X && offset1 != 0;
-
-    if (ne01 && ne1 && use_adreno_kernels(backend_ctx, src0) && !skip_adreno_for_a6x) {
+    if (ne01 && ne1 && use_adreno_kernels(backend_ctx, src0)) {
 
     // init CL objects
     // <--------------------------------------------> //
@@ -7773,6 +7761,13 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
     int K = ne00;
     int padding;
     // <--------------------------------------------> //
+
+    // Debug logging for A6X GEMM issue investigation
+    if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X && N > 1) {
+        printf("[A6X GEMM DEBUG] M=%d, N=%d, K=%d, src1_offset=%zu\n",
+               M, N, K, (size_t)extra1->offset);
+        fflush(stdout);
+    }
 
     // q4_0 x fp32
     if(src0t == GGML_TYPE_Q4_0 && src1t == GGML_TYPE_F32) {
@@ -7802,9 +7797,8 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
 
         // create a sub_buffer for B
         // <--------------------------------------------> //
-        region.size = K * N * sizeof(float);
-
         region.origin = (extra1->offset);
+        region.size = K * N * sizeof(float);
         B_sub_buffer = clCreateSubBuffer(
             extra1->data_device,
             0,
@@ -7875,6 +7869,17 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
             }
             int width_B = K/4;
             int padded_height_B = (N + padding)/4;
+
+            // Debug logging for transpose
+            if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
+                printf("[A6X TRANSPOSE DEBUG] N=%d, padding=%d, height_B=%d, width_B=%d, padded_height_B=%d\n",
+                       N, padding, height_B, width_B, padded_height_B);
+                printf("[A6X TRANSPOSE DEBUG] B_d_input_image width=%d, B_image1d width=%d\n",
+                       K * N / 4, K * (N + padding) / 4);
+                printf("[A6X TRANSPOSE DEBUG] N%%4=%d, N%%8=%d (potential boundary issue if non-zero)\n",
+                       N % 4, N % 8);
+                fflush(stdout);
+            }
 
             kernel = backend_ctx->kernel_transpose_32_16;
             CL_CHECK(clSetKernelArg(kernel, 0, sizeof(cl_mem), &B_d_input_image));
@@ -8030,12 +8035,6 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         // <--------------------------------------------> //
         backend_ctx->enqueue_ndrange_kernel(kernel, 3, global_work_size, local_work_size, dst);
         // <--------------------------------------------> //
-
-        // Flush command queue for A6X to ensure proper command ordering
-        // clFlush is faster than clFinish as it doesn't wait for completion
-        if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
-            CL_CHECK(clFlush(backend_ctx->queue));
-        }
 
         // deallocate sub buffers and images
         // <--------------------------------------------> //
