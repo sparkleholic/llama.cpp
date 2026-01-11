@@ -7552,17 +7552,9 @@ static void ggml_cl_mul_mat_kq_kqv_adreno(ggml_backend_t backend, const ggml_ten
     int N = ne1;
     int K = ne00;
 
-    // DEBUG: Track KQ/KQV dimensions - print when seq_len changes (indicates new query)
-    static int last_seq_len = 0;
     if (nb01 > nb02) {
-        // KQ: src0=K_cache, src1=Q, dst=attention_scores
-        if (M != last_seq_len) {
-            printf("[KQ] seq_len CHANGED: %d -> %d, N=%d, K=%d\n", last_seq_len, M, N, K);
-            last_seq_len = M;
-        }
         kernel = backend_ctx->kernel_mul_mm_f16_f32_kq;
     } else {
-        // KQV
         kernel = backend_ctx->kernel_mul_mm_f16_f32_kqv;
     }
     // create sub-buffer for A
@@ -7770,6 +7762,26 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
 
     // q4_0 x fp32
     if(src0t == GGML_TYPE_Q4_0 && src1t == GGML_TYPE_F32) {
+        // Debug logging for KV cache issue investigation
+        static int gemv_call_count = 0;
+        if (N == 1) {
+            gemv_call_count++;
+            // Log every 100 GEMV calls to reduce spam, plus first few
+            if (gemv_call_count <= 5 || gemv_call_count % 100 == 0) {
+                GGML_LOG_INFO("GEMV[%d]: M=%d K=%d N=%d src1_offset=%lu extrad_offset=%lu src0_name=%s src1_name=%s dst_name=%s\n",
+                    gemv_call_count, M, K, N, (unsigned long)extra1->offset, (unsigned long)extrad->offset,
+                    src0->name, src1->name, dst->name);
+            }
+        } else {
+            // Also log GEMM calls (prefill) with limited frequency
+            static int gemm_call_count = 0;
+            gemm_call_count++;
+            if (gemm_call_count <= 5 || gemm_call_count % 50 == 0) {
+                GGML_LOG_INFO("GEMM[%d]: M=%d K=%d N=%d src1_offset=%lu extrad_offset=%lu src0_name=%s src1_name=%s dst_name=%s\n",
+                    gemm_call_count, M, K, N, (unsigned long)extra1->offset, (unsigned long)extrad->offset,
+                    src0->name, src1->name, dst->name);
+            }
+        }
         // TODO: remove duplicate definitions of image description + format -- move to top
 
         // create an image for A
