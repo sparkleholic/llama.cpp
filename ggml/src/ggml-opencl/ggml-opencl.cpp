@@ -3638,6 +3638,13 @@ static enum ggml_status ggml_backend_opencl_buffer_init_tensor(ggml_backend_buff
 // The optimized gemm and gemv kernels are used for large matrices without batch.
 // tensor is the quantized weights matrix.
 inline bool use_adreno_kernels(const ggml_backend_opencl_context *backend_ctx, const ggml_tensor *tensor) {
+    // A6X GPUs have different subgroup behavior that breaks the optimized kernels.
+    // The kernels assume get_local_id(1) maps to subgroup ID, which requires
+    // exactly 64-lane subgroups. A6X subgroup operations may not behave as expected.
+    if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
+        return false;
+    }
+
     int64_t threshold_ne0 = 512;
     int64_t threshold_ne1 = 512;
     if (!backend_ctx->adreno_cl_compiler_version.newer_than_or_same(E031, 38, 11, 0) &&
@@ -3650,7 +3657,11 @@ inline bool use_adreno_kernels(const ggml_backend_opencl_context *backend_ctx, c
 }
 
 inline bool use_adreno_moe_kernels(const ggml_backend_opencl_context *backend_ctx, const ggml_tensor *tensor) {
-    GGML_UNUSED(backend_ctx);
+    // A6X GPUs have different subgroup behavior that breaks the optimized MOE kernels.
+    if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
+        return false;
+    }
+
     int ne01 = tensor->ne[1];
     return ((strstr(tensor->name, "ffn") != NULL) || (strstr(tensor->name, "as") != NULL)) && (ne01 % 64 == 0);
 }
