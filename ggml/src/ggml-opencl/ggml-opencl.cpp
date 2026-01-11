@@ -7745,7 +7745,11 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         }
     }
 
-    if (ne01 && ne1 && use_adreno_kernels(backend_ctx, src0)) {
+    // A6X GPUs have issues with images created from sub-buffers with non-zero offset.
+    // Skip optimized Adreno kernels and use general path when offset1 is non-zero on A6X.
+    bool skip_adreno_for_a6x = backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X && offset1 != 0;
+
+    if (ne01 && ne1 && use_adreno_kernels(backend_ctx, src0) && !skip_adreno_for_a6x) {
 
     // init CL objects
     // <--------------------------------------------> //
@@ -7800,43 +7804,13 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         // <--------------------------------------------> //
         region.size = K * N * sizeof(float);
 
-        // A6X GPUs have issues with images created from sub-buffers.
-        // Always copy data to a temporary buffer for A6X to avoid image issues.
-        if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
-            // Ensure the workaround buffer is large enough
-            backend_ctx->prealloc_a6x_src1.allocate(context, region.size);
-
-            // Copy src1 data from offset to workaround buffer at offset 0
-            CL_CHECK(clEnqueueCopyBuffer(
-                backend_ctx->queue,
-                extra1->data_device,
-                backend_ctx->prealloc_a6x_src1.buffer,
-                extra1->offset,  // src offset
-                0,               // dst offset
-                region.size,
-                0, NULL, NULL));
-
-            // Flush to ensure copy is submitted before creating image from the buffer
-            CL_CHECK(clFlush(backend_ctx->queue));
-
-            // Create sub_buffer from workaround buffer at offset 0
-            region.origin = 0;
-            B_sub_buffer = clCreateSubBuffer(
-                backend_ctx->prealloc_a6x_src1.buffer,
-                0,
-                CL_BUFFER_CREATE_TYPE_REGION,
-                &region,
-                &status);
-        } else {
-            // Normal path: create sub_buffer from original buffer
-            region.origin = (extra1->offset);
-            B_sub_buffer = clCreateSubBuffer(
-                extra1->data_device,
-                0,
-                CL_BUFFER_CREATE_TYPE_REGION,
-                &region,
-                &status);
-        }
+        region.origin = (extra1->offset);
+        B_sub_buffer = clCreateSubBuffer(
+            extra1->data_device,
+            0,
+            CL_BUFFER_CREATE_TYPE_REGION,
+            &region,
+            &status);
         CL_CHECK(status);
         // <--------------------------------------------> //
 
