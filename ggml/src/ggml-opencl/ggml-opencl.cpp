@@ -7735,17 +7735,6 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         }
     }
 
-    // Debug: trace which path is taken for mul_mat
-    static int mm_call_count = 0;
-    mm_call_count++;
-    if (mm_call_count <= 10 || mm_call_count % 500 == 0) {
-        bool adreno_ok = use_adreno_kernels(backend_ctx, src0);
-        printf("MUL_MAT[%d]: src0t=%d src1t=%d ne01=%d ne1=%d src0_ne0=%ld src0_ne1=%ld adreno_ok=%d\n",
-            mm_call_count, (int)src0t, (int)src1t, ne01, ne1,
-            (long)src0->ne[0], (long)src0->ne[1], adreno_ok);
-        fflush(stdout);
-    }
-
     if (ne01 && ne1 && use_adreno_kernels(backend_ctx, src0)) {
 
     // init CL objects
@@ -7773,26 +7762,6 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
 
     // q4_0 x fp32
     if(src0t == GGML_TYPE_Q4_0 && src1t == GGML_TYPE_F32) {
-        // Debug logging for KV cache issue investigation
-        static int gemv_call_count = 0;
-        if (N == 1) {
-            gemv_call_count++;
-            // Log every 100 GEMV calls to reduce spam, plus first few
-            if (gemv_call_count <= 5 || gemv_call_count % 100 == 0) {
-                printf("GEMV[%d]: M=%d K=%d N=%d src1_off=%lu dst_off=%lu\n",
-                    gemv_call_count, M, K, N, (unsigned long)extra1->offset, (unsigned long)extrad->offset);
-                fflush(stdout);
-            }
-        } else {
-            // Also log GEMM calls (prefill) with limited frequency
-            static int gemm_call_count = 0;
-            gemm_call_count++;
-            if (gemm_call_count <= 5 || gemm_call_count % 50 == 0) {
-                printf("GEMM[%d]: M=%d K=%d N=%d src1_off=%lu dst_off=%lu\n",
-                    gemm_call_count, M, K, N, (unsigned long)extra1->offset, (unsigned long)extrad->offset);
-                fflush(stdout);
-            }
-        }
         // TODO: remove duplicate definitions of image description + format -- move to top
 
         // create an image for A
