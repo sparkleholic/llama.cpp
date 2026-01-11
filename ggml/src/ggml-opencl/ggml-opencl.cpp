@@ -7737,11 +7737,7 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         }
     }
 
-    // A6X has issues with GEMM (N>1) due to transpose and image handling bugs.
-    // Skip Adreno GEMM kernels entirely for A6X, only use GEMV (N=1) which works correctly.
-    bool skip_gemm_a6x = backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X && ne1 > 1;
-
-    if (ne01 && ne1 && use_adreno_kernels(backend_ctx, src0) && !skip_gemm_a6x) {
+    if (ne01 && ne1 && use_adreno_kernels(backend_ctx, src0)) {
 
     // init CL objects
     // <--------------------------------------------> //
