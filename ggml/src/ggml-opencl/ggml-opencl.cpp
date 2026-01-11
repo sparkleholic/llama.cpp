@@ -771,6 +771,11 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
                                " -cl-mad-enable -cl-unsafe-math-optimizations"
                                " -cl-finite-math-only -cl-fast-relaxed-math";
 
+    // Add Adreno wave size define for kernels that need conditional subgroup size
+    if (backend_ctx->gpu_family == GPU_FAMILY::ADRENO) {
+        compile_opts += " -DADRENO_WAVE_SIZE=" + std::to_string(backend_ctx->adreno_wave_size);
+    }
+
     GGML_LOG_INFO("ggml_opencl: loading OpenCL kernels");
 
     // add
@@ -2256,6 +2261,9 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
     std::string CL_moe_compile_opts = std::string("-cl-std=") + opencl_c_std +
             " -cl-mad-enable "
             " -cl-fast-relaxed-math";
+    if (backend_ctx->gpu_family == GPU_FAMILY::ADRENO) {
+        CL_moe_compile_opts += " -DADRENO_WAVE_SIZE=" + std::to_string(backend_ctx->adreno_wave_size);
+    }
 
     // gemv_moe_mxfp4_f32
     {
