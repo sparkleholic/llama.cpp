@@ -7552,8 +7552,14 @@ static void ggml_cl_mul_mat_kq_kqv_adreno(ggml_backend_t backend, const ggml_ten
     int N = ne1;
     int K = ne00;
 
+    // DEBUG: Track KQ/KQV dimensions - print when seq_len changes (indicates new query)
+    static int last_seq_len = 0;
     if (nb01 > nb02) {
-        // KQ
+        // KQ: src0=K_cache, src1=Q, dst=attention_scores
+        if (M != last_seq_len) {
+            printf("[KQ] seq_len CHANGED: %d -> %d, N=%d, K=%d\n", last_seq_len, M, N, K);
+            last_seq_len = M;
+        }
         kernel = backend_ctx->kernel_mul_mm_f16_f32_kq;
     } else {
         // KQV
@@ -7737,9 +7743,7 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         }
     }
 
-    // DEBUG: A6X - only use optimized GEMV (ne1==1), skip GEMM (ne1>1) to isolate KV cache issue
-    bool skip_adreno_gemm = (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X && ne1 > 1);
-    if (ne01 && ne1 && use_adreno_kernels(backend_ctx, src0) && !skip_adreno_gemm) {
+    if (ne01 && ne1 && use_adreno_kernels(backend_ctx, src0)) {
 
     // init CL objects
     // <--------------------------------------------> //
