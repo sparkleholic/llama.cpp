@@ -7737,7 +7737,11 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         }
     }
 
-    if (ne01 && ne1 && use_adreno_kernels(backend_ctx, src0)) {
+    // A6X has issues with GEMM (N>1) when N < 4 due to height_B = N/4 = 0 being forced to 1.
+    // Skip Adreno kernels for A6X when N is between 2 and 3 (inclusive) to use general path.
+    bool skip_small_n_gemm_a6x = backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X && ne1 > 1 && ne1 < 4;
+
+    if (ne01 && ne1 && use_adreno_kernels(backend_ctx, src0) && !skip_small_n_gemm_a6x) {
 
     // init CL objects
     // <--------------------------------------------> //
@@ -7761,13 +7765,6 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
     int K = ne00;
     int padding;
     // <--------------------------------------------> //
-
-    // Debug logging for A6X GEMM issue investigation
-    if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X && N > 1) {
-        printf("[A6X GEMM DEBUG] M=%d, N=%d, K=%d, src1_offset=%zu\n",
-               M, N, K, (size_t)extra1->offset);
-        fflush(stdout);
-    }
 
     // q4_0 x fp32
     if(src0t == GGML_TYPE_Q4_0 && src1t == GGML_TYPE_F32) {
@@ -7869,17 +7866,6 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
             }
             int width_B = K/4;
             int padded_height_B = (N + padding)/4;
-
-            // Debug logging for transpose
-            if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
-                printf("[A6X TRANSPOSE DEBUG] N=%d, padding=%d, height_B=%d, width_B=%d, padded_height_B=%d\n",
-                       N, padding, height_B, width_B, padded_height_B);
-                printf("[A6X TRANSPOSE DEBUG] B_d_input_image width=%d, B_image1d width=%d\n",
-                       K * N / 4, K * (N + padding) / 4);
-                printf("[A6X TRANSPOSE DEBUG] N%%4=%d, N%%8=%d (potential boundary issue if non-zero)\n",
-                       N % 4, N % 8);
-                fflush(stdout);
-            }
 
             kernel = backend_ctx->kernel_transpose_32_16;
             CL_CHECK(clSetKernelArg(kernel, 0, sizeof(cl_mem), &B_d_input_image));
