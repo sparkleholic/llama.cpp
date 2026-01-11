@@ -10,11 +10,15 @@
 #ifdef cl_qcom_reqd_sub_group_size
 #pragma OPENCL EXTENSION cl_qcom_reqd_sub_group_size : enable
 #define ADRENO_GPU 1
-#define REQD_SUBGROUP_SIZE_128 __attribute__((qcom_reqd_sub_group_size("full")))
+// Request full subgroup size for maximum parallelism
+// On A7X/A8X (wave=128): "full" = 128 lanes
+// On A6X (wave=64): "full" = 64 lanes
+// The kernel doesn't rely on specific lane count, just processes 8x4 tiles per work item
+#define REQD_SUBGROUP_SIZE_FULL __attribute__((qcom_reqd_sub_group_size("full")))
 #endif
 
 #ifdef ADRENO_GPU
-REQD_SUBGROUP_SIZE_128
+REQD_SUBGROUP_SIZE_FULL
 #endif
 
 kernel void kernel_mul_mat_Ab_Bi_8x4(

@@ -92,6 +92,7 @@ enum GPU_FAMILY {
 
 enum ADRENO_GPU_GEN {
     ADRENO_UNKNOWN,
+    A6X,
     A7X,
     A8X,
     X1E,
@@ -220,16 +221,31 @@ static ggml_cl_version get_opencl_c_version(ggml_cl_version platform_version, cl
 }
 
 static ADRENO_GPU_GEN get_adreno_gpu_gen(const char *device_name) {
+    // Adreno 6xx series (A6X) - e.g., Adreno 643 in QCS6490
+    if (strstr(device_name, "643") ||
+        strstr(device_name, "642") ||
+        strstr(device_name, "640") ||
+        strstr(device_name, "650") ||
+        strstr(device_name, "660") ||
+        strstr(device_name, "680") ||
+        strstr(device_name, "685") ||
+        strstr(device_name, "690")) {
+        return ADRENO_GPU_GEN::A6X;
+    }
+
+    // Adreno 7xx series (A7X)
     if (strstr(device_name, "730") ||
         strstr(device_name, "740") ||
         strstr(device_name, "750")) {
         return ADRENO_GPU_GEN::A7X;
     }
 
+    // Adreno 8xx series (A8X)
     if (strstr(device_name, "830")) {
         return ADRENO_GPU_GEN::A8X;
     }
 
+    // Snapdragon X Elite (X1E)
     if (strstr(device_name, "X1")) {
         return ADRENO_GPU_GEN::X1E;
     }
@@ -2117,6 +2133,8 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
         std::string CL_gemv_compile_opts = std::string("-cl-std=") + opencl_c_std +
                                        " -cl-mad-enable "
                                        " -DSIMDGROUP_WIDTH=" +
+                                       std::to_string(backend_ctx->adreno_wave_size) +
+                                       " -DADRENO_WAVE_SIZE=" +
                                        std::to_string(backend_ctx->adreno_wave_size);
         if (backend_ctx->has_vector_subgroup_broadcast) {
             CL_gemv_compile_opts += " -DVECTOR_SUB_GROUP_BROADCAT ";
@@ -2145,6 +2163,8 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
             " -DLINE_STRIDE_A=2048 "
             " -DBLOCK_STRIDE_A=16384 "
             " -DSIMDGROUP_WIDTH=" +
+            std::to_string(backend_ctx->adreno_wave_size) +
+            " -DADRENO_WAVE_SIZE=" +
             std::to_string(backend_ctx->adreno_wave_size);
         if (backend_ctx->has_vector_subgroup_broadcast) {
             CL_gemv_compile_opts += " -DVECTOR_SUB_GROUP_BROADCAT ";
@@ -2169,6 +2189,8 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
             " -DLINE_STRIDE_A=2048 "
             " -DBLOCK_STRIDE_A=16384 "
             " -DSIMDGROUP_WIDTH=" +
+            std::to_string(backend_ctx->adreno_wave_size) +
+            " -DADRENO_WAVE_SIZE=" +
             std::to_string(backend_ctx->adreno_wave_size);
         if (backend_ctx->has_vector_subgroup_broadcast) {
             CL_gemv_compile_opts += " -DVECTOR_SUB_GROUP_BROADCAT ";
@@ -2185,6 +2207,8 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
             " -DLINE_STRIDE_A=5504 "
             " -DBLOCK_STRIDE_A=44032 "
             " -DSIMDGROUP_WIDTH=" +
+            std::to_string(backend_ctx->adreno_wave_size) +
+            " -DADRENO_WAVE_SIZE=" +
             std::to_string(backend_ctx->adreno_wave_size);
         if (backend_ctx->has_vector_subgroup_broadcast) {
             CL_gemv_compile_opts += " -DVECTOR_SUB_GROUP_BROADCAT ";
@@ -2201,6 +2225,8 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
             " -DLINE_STRIDE_A=16000 "
             " -DBLOCK_STRIDE_A=128000 "
             " -DSIMDGROUP_WIDTH=" +
+            std::to_string(backend_ctx->adreno_wave_size) +
+            " -DADRENO_WAVE_SIZE=" +
             std::to_string(backend_ctx->adreno_wave_size);
 
         if (backend_ctx->has_vector_subgroup_broadcast) {
@@ -2539,8 +2565,30 @@ static ggml_backend_opencl_context * ggml_cl2_init(ggml_backend_dev_t dev) {
             backend_ctx->adreno_gen = get_adreno_gpu_gen(dev_ctx->device_name.c_str());
         }
 
-        // Use wave size of 64 for all Adreno GPUs.
-        backend_ctx->adreno_wave_size = 64;
+        // Log detected Adreno generation
+        const char * gen_str = "unknown";
+        switch (backend_ctx->adreno_gen) {
+            case ADRENO_GPU_GEN::A6X: gen_str = "A6X"; break;
+            case ADRENO_GPU_GEN::A7X: gen_str = "A7X"; break;
+            case ADRENO_GPU_GEN::A8X: gen_str = "A8X"; break;
+            case ADRENO_GPU_GEN::X1E: gen_str = "X1E"; break;
+            default: break;
+        }
+        GGML_LOG_INFO("ggml_opencl: Adreno generation: %s\n", gen_str);
+
+        if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
+            GGML_LOG_WARN("ggml_opencl: A6X GPU detected. Performance may vary depending on driver/compiler version.\n");
+        } else if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::ADRENO_UNKNOWN) {
+            GGML_LOG_WARN("ggml_opencl: Unknown Adreno generation. Some optimizations may not be applied.\n");
+        }
+
+        // Query actual wave size from device using CL_DEVICE_PREFERRED_WORK_GROUP_SIZE_MULTIPLE
+        // This gives us the native wave/subgroup size for the GPU
+        size_t preferred_wg_multiple = 64; // default fallback
+        clGetDeviceInfo(dev_ctx->device, CL_DEVICE_PREFERRED_WORK_GROUP_SIZE_MULTIPLE,
+                        sizeof(size_t), &preferred_wg_multiple, NULL);
+        backend_ctx->adreno_wave_size = (int)preferred_wg_multiple;
+        GGML_LOG_INFO("ggml_opencl: Adreno wave size (from device query): %d\n", backend_ctx->adreno_wave_size);
     } else if (strstr(dev_ctx->device_name.c_str(), "Intel")) {
         backend_ctx->gpu_family = GPU_FAMILY::INTEL;
     } else {

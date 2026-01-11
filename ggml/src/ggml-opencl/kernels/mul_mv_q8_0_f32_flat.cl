@@ -14,8 +14,16 @@
 #elif defined(cl_qcom_reqd_sub_group_size)
 #pragma OPENCL EXTENSION cl_qcom_reqd_sub_group_size : enable
 #define ADRENO_GPU 1
+// Subgroup size depends on native wave size (ADRENO_WAVE_SIZE passed at compile time):
+// - A7X/A8X (wave=128): "half"=64, "full"=128
+// - A6X (wave=64): "half"=32, "full"=64
+#if ADRENO_WAVE_SIZE == 64
+#define REQD_SUBGROUP_SIZE_64  __attribute__((qcom_reqd_sub_group_size("full")))
+#define REQD_SUBGROUP_SIZE_128 __attribute__((qcom_reqd_sub_group_size("full")))
+#else
 #define REQD_SUBGROUP_SIZE_64  __attribute__((qcom_reqd_sub_group_size("half")))
 #define REQD_SUBGROUP_SIZE_128 __attribute__((qcom_reqd_sub_group_size("full")))
+#endif
 #endif
 
 #define QK8_0 32

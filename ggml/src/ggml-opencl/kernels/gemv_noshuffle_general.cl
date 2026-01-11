@@ -4,7 +4,15 @@
 #ifdef cl_qcom_reqd_sub_group_size
 #pragma OPENCL EXTENSION cl_qcom_reqd_sub_group_size : enable
 #define ADRENO_GPU 1
+// Subgroup size attribute depends on the GPU's native wave size:
+// - A7X/A8X (wave=128): Use "half" to get 64 lanes
+// - A6X (wave=64): Use "full" to get 64 lanes
+// This is controlled by ADRENO_WAVE_SIZE define passed at compile time
+#if ADRENO_WAVE_SIZE == 64
+#define REQD_SUBGROUP_SIZE_64 __attribute__((qcom_reqd_sub_group_size("full")))
+#else
 #define REQD_SUBGROUP_SIZE_64 __attribute__((qcom_reqd_sub_group_size("half")))
+#endif
 #endif
 
 // assume

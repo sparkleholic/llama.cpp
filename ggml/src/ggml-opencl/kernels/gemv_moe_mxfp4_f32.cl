@@ -2,6 +2,15 @@
 #pragma OPENCL EXTENSION cl_khr_subgroups : enable
 #pragma OPENCL EXTENSION cl_qcom_reqd_sub_group_size : enable
 
+// Subgroup size depends on native wave size (ADRENO_WAVE_SIZE passed at compile time):
+// - A7X/A8X (wave=128): "half"=64, "full"=128
+// - A6X (wave=64): "half"=32, "full"=64
+#if ADRENO_WAVE_SIZE == 64
+#define REQD_SUBGROUP_SIZE_64 __attribute__((qcom_reqd_sub_group_size("full")))
+#else
+#define REQD_SUBGROUP_SIZE_64 __attribute__((qcom_reqd_sub_group_size("half")))
+#endif
+
 #define QK_MXFP4 32
 #define N_SIMDGROUP 4
 #define SIMDGROUP_WIDTH 64
@@ -65,7 +74,7 @@ static inline float e8m0_to_fp32(uchar x) {
 }
 
 
-__attribute__((qcom_reqd_sub_group_size("half")))
+REQD_SUBGROUP_SIZE_64
 __kernel void kernel_gemv_moe_mxfp4_f32(
     __global uint4 * src0_q,
     __global uchar * src0_e,
