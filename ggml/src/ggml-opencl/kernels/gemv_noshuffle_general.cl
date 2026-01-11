@@ -5,14 +5,10 @@
 #pragma OPENCL EXTENSION cl_qcom_reqd_sub_group_size : enable
 #define ADRENO_GPU 1
 // Subgroup size attribute depends on the GPU's native wave size:
-// - A7X/A8X (wave=128): Use "half" to get 64 lanes
-// - A6X (wave=64): Use "full" to get 64 lanes
-// This is controlled by ADRENO_WAVE_SIZE define passed at compile time
-#if ADRENO_WAVE_SIZE == 64
-#define REQD_SUBGROUP_SIZE_64 __attribute__((qcom_reqd_sub_group_size("full")))
-#else
+// - A6X/A7X/A8X all have native wave size of 128
+// - Use "half" to get 64 lanes (half of 128)
+// ADRENO_WAVE_SIZE is set to 128 for all Adreno GPUs
 #define REQD_SUBGROUP_SIZE_64 __attribute__((qcom_reqd_sub_group_size("half")))
-#endif
 #endif
 
 // assume
@@ -220,26 +216,6 @@ __kernel void kernel_gemv_noshuffle(
     uint groupId = get_sub_group_id();
     uint gid     = get_global_id(0);
     ushort slid    = get_sub_group_local_id();
-
-    // DEBUG: Print subgroup info for first work item only
-    if (get_global_id(0) == 0 && get_global_id(1) == 0 && get_global_id(2) == 0) {
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] ======================================\n");
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_sub_group_size()     = %u\n", (uint)get_sub_group_size());
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_max_sub_group_size() = %u\n", (uint)get_max_sub_group_size());
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_num_sub_groups()     = %u\n", (uint)get_num_sub_groups());
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_sub_group_id()       = %u\n", (uint)get_sub_group_id());
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_sub_group_local_id() = %u\n", (uint)get_sub_group_local_id());
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_local_id(0)          = %u\n", (uint)get_local_id(0));
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_local_id(1)          = %u\n", (uint)get_local_id(1));
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_local_size(0)        = %u\n", (uint)get_local_size(0));
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_local_size(1)        = %u\n", (uint)get_local_size(1));
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_global_size(0)       = %u\n", (uint)get_global_size(0));
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_global_size(1)       = %u\n", (uint)get_global_size(1));
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] SIMDGROUP_WIDTH (compile)= %d\n", SIMDGROUP_WIDTH);
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] N_SIMDGROUP (compile)    = %d\n", N_SIMDGROUP);
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] ne00(K)=%d, ne01(M)=%d, ne0=%d, ne1=%d\n", ne00, ne01, ne0, ne1);
-        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] ======================================\n");
-    }
 
     uint K = ne00;
     uint M = ne01;
