@@ -3654,6 +3654,10 @@ static enum ggml_status ggml_backend_opencl_buffer_init_tensor(ggml_backend_buff
 // The optimized gemm and gemv kernels are used for large matrices without batch.
 // tensor is the quantized weights matrix.
 inline bool use_adreno_kernels(const ggml_backend_opencl_context *backend_ctx, const ggml_tensor *tensor) {
+    // DEBUG: Temporarily disable optimized kernels for A6X to test KV cache issue
+    if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
+        return false;
+    }
     int64_t threshold_ne0 = 512;
     int64_t threshold_ne1 = 512;
     if (!backend_ctx->adreno_cl_compiler_version.newer_than_or_same(E031, 38, 11, 0) &&
@@ -7581,9 +7585,6 @@ static void ggml_cl_mul_mat_kq_kqv_adreno(ggml_backend_t backend, const ggml_ten
     // <--------------------------------------------> //
     region.origin = (extra1->offset);
     region.size = nb10 * ne10 * ne11 * ne12;
-    // DEBUG: Print offset for KQ/KQV kernel
-    printf("[KQKQV_OFFSET] B_offset=%lu, ne10=%d, ne11=%d, ne12=%d, src1_name=%s\n",
-           (unsigned long)extra1->offset, ne10, ne11, ne12, src1->name ? src1->name : "null");
     B_sub_buffer = clCreateSubBuffer((extra1->data_device), 0, CL_BUFFER_CREATE_TYPE_REGION, &region, &status);
     CL_CHECK(status);
     // <--------------------------------------------> //
@@ -7795,11 +7796,6 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         // <--------------------------------------------> //
         region.origin = (extra1->offset);
         region.size = K * N * sizeof(float);
-        // DEBUG: Print offset and dimensions for GEMV kernel
-        if (N == 1) {
-            printf("[GEMV_OFFSET] B_offset=%lu, K=%d, M=%d, src1_name=%s\n",
-                   (unsigned long)extra1->offset, K, M, src1->name ? src1->name : "null");
-        }
         B_sub_buffer = clCreateSubBuffer(
             extra1->data_device,
             0,
