@@ -8000,13 +8000,15 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         }
 
         if (N == 1) {
-            size_t wavesize = backend_ctx->adreno_wave_size;
-            local_work_size[0] = wavesize; // localsize
-            local_work_size[1] = 4; // reduce factor
+            // Use simdgroup_width (64) for workgroup sizing, not native wave size (128)
+            // The kernel expects 4 subgroups of 64 lanes each = 256 work items
+            size_t simdgroup_width = 64;
+            local_work_size[0] = simdgroup_width; // 64 lanes per subgroup
+            local_work_size[1] = 4; // 4 subgroups (N_SIMDGROUP)
             local_work_size[2] = 1;
 
-            global_work_size[0] = (((M / 2) + wavesize - 1) / wavesize) * wavesize;
-            global_work_size[1] = 4; // reduce factor
+            global_work_size[0] = (((M / 2) + simdgroup_width - 1) / simdgroup_width) * simdgroup_width;
+            global_work_size[1] = 4; // 4 subgroups (N_SIMDGROUP)
             global_work_size[2] = 1;
         }
         // <--------------------------------------------> //
