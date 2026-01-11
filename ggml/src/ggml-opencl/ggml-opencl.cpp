@@ -8016,10 +8016,10 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         backend_ctx->enqueue_ndrange_kernel(kernel, 3, global_work_size, local_work_size, dst);
         // <--------------------------------------------> //
 
-        // Synchronize before releasing memory objects
-        // A6X GPUs may have issues if memory is released while kernel is still running
+        // Flush command queue for A6X to ensure proper command ordering
+        // clFlush is faster than clFinish as it doesn't wait for completion
         if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
-            CL_CHECK(clFinish(backend_ctx->queue));
+            CL_CHECK(clFlush(backend_ctx->queue));
         }
 
         // deallocate sub buffers and images
