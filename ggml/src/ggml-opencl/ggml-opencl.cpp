@@ -422,6 +422,8 @@ struct ggml_backend_opencl_context {
     ggml_cl_buffer prealloc_quant_trans;
     ggml_cl_buffer prealloc_scales_trans;
     ggml_cl_buffer prealloc_act_trans;
+    // prealloc buffer for A6X src1 image offset workaround
+    ggml_cl_buffer prealloc_a6x_src1;
 
     cl_program program_add;
     cl_program program_add_id;
@@ -2775,6 +2777,14 @@ static ggml_backend_opencl_context * ggml_cl2_init(ggml_backend_dev_t dev) {
     backend_ctx->prealloc_quant_trans.allocate(context, max_A_q_d_bytes);
     backend_ctx->prealloc_scales_trans.allocate(context, max_A_s_d_bytes);
     backend_ctx->prealloc_act_trans.allocate(context, max_B_d_bytes);
+
+    // Allocate A6X src1 workaround buffer for image offset issue
+    // A6X GPUs have issues with images created from sub-buffers not properly
+    // respecting the sub-buffer offset. This buffer is used to copy src1 data
+    // when there's a non-zero offset.
+    if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
+        backend_ctx->prealloc_a6x_src1.allocate(context, max_B_d_bytes);
+    }
 #endif // GGML_OPENCL_USE_ADRENO_KERNELS
 
     backend_ctx->disable_fusion = getenv("GGML_OPENCL_DISABLE_FUSION") != nullptr;
@@ -7788,14 +7798,43 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
 
         // create a sub_buffer for B
         // <--------------------------------------------> //
-        region.origin = (extra1->offset);
         region.size = K * N * sizeof(float);
-        B_sub_buffer = clCreateSubBuffer(
-            extra1->data_device,
-            0,
-            CL_BUFFER_CREATE_TYPE_REGION,
-            &region,
-            &status);
+
+        // A6X GPUs have issues with images created from sub-buffers not properly
+        // respecting the sub-buffer offset. When offset is non-zero, copy data
+        // to a temporary buffer at offset 0 first.
+        if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X && extra1->offset != 0) {
+            // Ensure the workaround buffer is large enough
+            backend_ctx->prealloc_a6x_src1.allocate(context, region.size);
+
+            // Copy src1 data from offset to workaround buffer at offset 0
+            CL_CHECK(clEnqueueCopyBuffer(
+                backend_ctx->queue,
+                extra1->data_device,
+                backend_ctx->prealloc_a6x_src1.buffer,
+                extra1->offset,  // src offset
+                0,               // dst offset
+                region.size,
+                0, NULL, NULL));
+
+            // Create sub_buffer from workaround buffer at offset 0
+            region.origin = 0;
+            B_sub_buffer = clCreateSubBuffer(
+                backend_ctx->prealloc_a6x_src1.buffer,
+                0,
+                CL_BUFFER_CREATE_TYPE_REGION,
+                &region,
+                &status);
+        } else {
+            // Normal path: create sub_buffer from original buffer
+            region.origin = (extra1->offset);
+            B_sub_buffer = clCreateSubBuffer(
+                extra1->data_device,
+                0,
+                CL_BUFFER_CREATE_TYPE_REGION,
+                &region,
+                &status);
+        }
         CL_CHECK(status);
         // <--------------------------------------------> //
 
