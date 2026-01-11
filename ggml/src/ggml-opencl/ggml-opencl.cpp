@@ -3638,6 +3638,15 @@ static enum ggml_status ggml_backend_opencl_buffer_init_tensor(ggml_backend_buff
 // The optimized gemm and gemv kernels are used for large matrices without batch.
 // tensor is the quantized weights matrix.
 inline bool use_adreno_kernels(const ggml_backend_opencl_context *backend_ctx, const ggml_tensor *tensor) {
+    // A6X GPUs have different sub_group_broadcast behavior that breaks the
+    // gemv_noshuffle kernels. The kernels rely on broadcasting data from lanes
+    // 0-3 to all other lanes, which doesn't work correctly on A6X.
+    // Fall back to generic kernels which work correctly.
+    // DEBUG: Temporarily enabled for A6X to gather subgroup debug info
+    if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
+        // return false;  // DEBUG: Commented out to test on A6X
+    }
+
     int64_t threshold_ne0 = 512;
     int64_t threshold_ne1 = 512;
     if (!backend_ctx->adreno_cl_compiler_version.newer_than_or_same(E031, 38, 11, 0) &&

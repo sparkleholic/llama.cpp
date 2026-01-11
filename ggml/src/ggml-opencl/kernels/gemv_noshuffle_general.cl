@@ -221,6 +221,26 @@ __kernel void kernel_gemv_noshuffle(
     uint gid     = get_global_id(0);
     ushort slid    = get_sub_group_local_id();
 
+    // DEBUG: Print subgroup info for first work item only
+    if (get_global_id(0) == 0 && get_global_id(1) == 0 && get_global_id(2) == 0) {
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] ======================================\n");
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_sub_group_size()     = %u\n", (uint)get_sub_group_size());
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_max_sub_group_size() = %u\n", (uint)get_max_sub_group_size());
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_num_sub_groups()     = %u\n", (uint)get_num_sub_groups());
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_sub_group_id()       = %u\n", (uint)get_sub_group_id());
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_sub_group_local_id() = %u\n", (uint)get_sub_group_local_id());
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_local_id(0)          = %u\n", (uint)get_local_id(0));
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_local_id(1)          = %u\n", (uint)get_local_id(1));
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_local_size(0)        = %u\n", (uint)get_local_size(0));
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_local_size(1)        = %u\n", (uint)get_local_size(1));
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_global_size(0)       = %u\n", (uint)get_global_size(0));
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] get_global_size(1)       = %u\n", (uint)get_global_size(1));
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] SIMDGROUP_WIDTH (compile)= %d\n", SIMDGROUP_WIDTH);
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] N_SIMDGROUP (compile)    = %d\n", N_SIMDGROUP);
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] ne00(K)=%d, ne01(M)=%d, ne0=%d, ne1=%d\n", ne00, ne01, ne0, ne1);
+        printf("[GEMV_NOSHUFFLE_GENERAL DEBUG] ======================================\n");
+    }
+
     uint K = ne00;
     uint M = ne01;
 
