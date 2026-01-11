@@ -7800,10 +7800,9 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         // <--------------------------------------------> //
         region.size = K * N * sizeof(float);
 
-        // A6X GPUs have issues with images created from sub-buffers not properly
-        // respecting the sub-buffer offset. When offset is non-zero, copy data
-        // to a temporary buffer at offset 0 first.
-        if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X && extra1->offset != 0) {
+        // A6X GPUs have issues with images created from sub-buffers.
+        // Always copy data to a temporary buffer for A6X to avoid image issues.
+        if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
             // Ensure the workaround buffer is large enough
             backend_ctx->prealloc_a6x_src1.allocate(context, region.size);
 
@@ -7816,6 +7815,9 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
                 0,               // dst offset
                 region.size,
                 0, NULL, NULL));
+
+            // Flush to ensure copy is submitted before creating image from the buffer
+            CL_CHECK(clFlush(backend_ctx->queue));
 
             // Create sub_buffer from workaround buffer at offset 0
             region.origin = 0;
