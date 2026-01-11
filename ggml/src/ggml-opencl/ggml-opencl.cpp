@@ -7581,6 +7581,9 @@ static void ggml_cl_mul_mat_kq_kqv_adreno(ggml_backend_t backend, const ggml_ten
     // <--------------------------------------------> //
     region.origin = (extra1->offset);
     region.size = nb10 * ne10 * ne11 * ne12;
+    // DEBUG: Print offset for KQ/KQV kernel
+    printf("[KQKQV_OFFSET] B_offset=%lu, ne10=%d, ne11=%d, ne12=%d, src1_name=%s\n",
+           (unsigned long)extra1->offset, ne10, ne11, ne12, src1->name ? src1->name : "null");
     B_sub_buffer = clCreateSubBuffer((extra1->data_device), 0, CL_BUFFER_CREATE_TYPE_REGION, &region, &status);
     CL_CHECK(status);
     // <--------------------------------------------> //
@@ -7792,6 +7795,11 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         // <--------------------------------------------> //
         region.origin = (extra1->offset);
         region.size = K * N * sizeof(float);
+        // DEBUG: Print offset and dimensions for GEMV kernel
+        if (N == 1) {
+            printf("[GEMV_OFFSET] B_offset=%lu, K=%d, M=%d, src1_name=%s\n",
+                   (unsigned long)extra1->offset, K, M, src1->name ? src1->name : "null");
+        }
         B_sub_buffer = clCreateSubBuffer(
             extra1->data_device,
             0,
