@@ -216,7 +216,8 @@ __kernel void kernel_gemv_noshuffle(
         int r2,                 // 1
         int r3)
 {
-    uint groupId = get_local_id(1);
+    // Use get_sub_group_id() for proper subgroup indexing across different GPU architectures
+    uint groupId = get_sub_group_id();
     uint gid     = get_global_id(0);
     ushort slid    = get_sub_group_local_id();
 
