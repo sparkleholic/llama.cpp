@@ -2135,10 +2135,14 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
 
     // gemv_noshuffle_general
     {
+        // ADRENO_WAVE_SIZE: native wave size, used to select subgroup size attribute
+        // SIMDGROUP_WIDTH: actual subgroup size after applying the attribute (always 64)
+        // For A6X/A7X/A8X: native wave is 128, we use "half" to get 64 lanes
+        int simdgroup_width = 64;  // Always 64 lanes per subgroup for these kernels
         std::string CL_gemv_compile_opts = std::string("-cl-std=") + opencl_c_std +
                                        " -cl-mad-enable "
                                        " -DSIMDGROUP_WIDTH=" +
-                                       std::to_string(backend_ctx->adreno_wave_size) +
+                                       std::to_string(simdgroup_width) +
                                        " -DADRENO_WAVE_SIZE=" +
                                        std::to_string(backend_ctx->adreno_wave_size);
         if (backend_ctx->has_vector_subgroup_broadcast) {
@@ -2162,13 +2166,17 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
 
     // gemv_noshuffle
     {
+        // SIMDGROUP_WIDTH: actual subgroup size (always 64 lanes)
+        // ADRENO_WAVE_SIZE: native wave size, used to select subgroup size attribute
+        int simdgroup_width = 64;
+
         // Gemv 2048, 16384
         std::string CL_gemv_compile_opts = std::string("-cl-std=") + opencl_c_std +
             " -cl-mad-enable "
             " -DLINE_STRIDE_A=2048 "
             " -DBLOCK_STRIDE_A=16384 "
             " -DSIMDGROUP_WIDTH=" +
-            std::to_string(backend_ctx->adreno_wave_size) +
+            std::to_string(simdgroup_width) +
             " -DADRENO_WAVE_SIZE=" +
             std::to_string(backend_ctx->adreno_wave_size);
         if (backend_ctx->has_vector_subgroup_broadcast) {
@@ -2194,7 +2202,7 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
             " -DLINE_STRIDE_A=2048 "
             " -DBLOCK_STRIDE_A=16384 "
             " -DSIMDGROUP_WIDTH=" +
-            std::to_string(backend_ctx->adreno_wave_size) +
+            std::to_string(simdgroup_width) +
             " -DADRENO_WAVE_SIZE=" +
             std::to_string(backend_ctx->adreno_wave_size);
         if (backend_ctx->has_vector_subgroup_broadcast) {
@@ -2212,7 +2220,7 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
             " -DLINE_STRIDE_A=5504 "
             " -DBLOCK_STRIDE_A=44032 "
             " -DSIMDGROUP_WIDTH=" +
-            std::to_string(backend_ctx->adreno_wave_size) +
+            std::to_string(simdgroup_width) +
             " -DADRENO_WAVE_SIZE=" +
             std::to_string(backend_ctx->adreno_wave_size);
         if (backend_ctx->has_vector_subgroup_broadcast) {
@@ -2230,7 +2238,7 @@ static void load_cl_kernels(ggml_backend_opencl_context *backend_ctx, ggml_cl_ve
             " -DLINE_STRIDE_A=16000 "
             " -DBLOCK_STRIDE_A=128000 "
             " -DSIMDGROUP_WIDTH=" +
-            std::to_string(backend_ctx->adreno_wave_size) +
+            std::to_string(simdgroup_width) +
             " -DADRENO_WAVE_SIZE=" +
             std::to_string(backend_ctx->adreno_wave_size);
 
