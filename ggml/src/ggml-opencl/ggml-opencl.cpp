@@ -7892,14 +7892,25 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
             backend_ctx->enqueue_ndrange_kernel(kernel, 2, global_size_t, local_size_t, dst);
         } else {
             // no need to transpose B in other cases
-            // create an image for B from sub_buffer
+            // create an image for B
             // <--------------------------------------------> //
             img_fmt_1d = {CL_RGBA, CL_FLOAT};
 
             memset(&img_desc_1d, 0, sizeof(img_desc_1d));
-            img_desc_1d.image_width = K * N / 4;
             img_desc_1d.image_type = CL_MEM_OBJECT_IMAGE1D_BUFFER;
-            img_desc_1d.buffer = B_sub_buffer;
+
+            // A6X has issues with images created from sub-buffers.
+            // Use full buffer and apply offset in kernel instead.
+            if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
+                // Get buffer size and calculate image width
+                size_t buffer_size = 0;
+                CL_CHECK(clGetMemObjectInfo(extra1->data_device, CL_MEM_SIZE, sizeof(size_t), &buffer_size, NULL));
+                img_desc_1d.image_width = buffer_size / (4 * sizeof(float));
+                img_desc_1d.buffer = extra1->data_device;
+            } else {
+                img_desc_1d.image_width = K * N / 4;
+                img_desc_1d.buffer = B_sub_buffer;
+            }
             B_image1d = clCreateImage(
                 context,
                 CL_MEM_READ_ONLY,
@@ -7934,10 +7945,14 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         cl_uint k_arg = 0;
 
         if (N == 1) {
+            // For A6X, we use full buffer with offset applied in kernel
+            // For other GPUs, sub-buffer already has offset baked in, so pass 0
+            cl_ulong b_offset = (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) ? extra1->offset : 0;
+
             CL_CHECK(clSetKernelArg(kernel,  k_arg++, sizeof(cl_mem),   &A_image1d));
             CL_CHECK(clSetKernelArg(kernel,  k_arg++, sizeof(cl_mem),   &extra0_q4_0->d));
             CL_CHECK(clSetKernelArg(kernel,  k_arg++, sizeof(cl_mem),   &B_image1d));
-            CL_CHECK(clSetKernelArg(kernel,  k_arg++, sizeof(cl_ulong), &extra1->offset));
+            CL_CHECK(clSetKernelArg(kernel,  k_arg++, sizeof(cl_ulong), &b_offset));
             CL_CHECK(clSetKernelArg(kernel,  k_arg++, sizeof(cl_mem),   &extrad->data_device));
             CL_CHECK(clSetKernelArg(kernel,  k_arg++, sizeof(cl_ulong), &extrad->offset));
             CL_CHECK(clSetKernelArg(kernel,  k_arg++, sizeof(int),      &ne00));
@@ -8015,12 +8030,6 @@ static void ggml_cl_mul_mat(ggml_backend_t backend, const ggml_tensor * src0, co
         // <--------------------------------------------> //
         backend_ctx->enqueue_ndrange_kernel(kernel, 3, global_work_size, local_work_size, dst);
         // <--------------------------------------------> //
-
-        // Synchronize before releasing memory objects
-        // A6X GPUs may have issues if memory is released while kernel is still running
-        if (backend_ctx->adreno_gen == ADRENO_GPU_GEN::A6X) {
-            CL_CHECK(clFinish(backend_ctx->queue));
-        }
 
         // deallocate sub buffers and images
         // <--------------------------------------------> //

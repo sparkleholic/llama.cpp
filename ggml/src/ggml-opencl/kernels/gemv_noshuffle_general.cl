@@ -223,6 +223,10 @@ __kernel void kernel_gemv_noshuffle(
     uint LINE_STRIDE_A = M / 2;
     uint BLOCK_STRIDE_A = N_SIMDGROUP * M;
 
+    // Calculate image offset from byte offset
+    // Image format is CL_RGBA CL_FLOAT = 4 floats = 16 bytes per element
+    int src1_img_offset = (int)(offset1 / 16);
+
     __private uint4     regA;
     __private half2     regS;
     __private float8    regB;
@@ -234,8 +238,8 @@ __kernel void kernel_gemv_noshuffle(
         regS = src0_d[gid + k * LINE_STRIDE_A]; // each fiber loads scale of two rows
         // first 4 fibers in each wave load 8 B values to its private scope
         if (slid < 4) {
-            regB.s0123 = read_imagef(src1, (slid * 2 + k * 8));
-            regB.s4567 = read_imagef(src1, (1 + slid * 2 + k * 8));
+            regB.s0123 = read_imagef(src1, (src1_img_offset + slid * 2 + k * 8));
+            regB.s4567 = read_imagef(src1, (src1_img_offset + 1 + slid * 2 + k * 8));
         }
 
         // load half weights for two blocks in consecutive rows
