@@ -217,16 +217,6 @@ __kernel void kernel_gemv_noshuffle(
     uint gid     = get_global_id(0);
     ushort slid    = get_sub_group_local_id();
 
-    // DEBUG: Print subgroup info for first workgroup only
-    if (get_group_id(0) == 0 && get_group_id(1) == 0 && slid == 0) {
-        printf("[GEMV_DEBUG] groupId(sub_group_id)=%u, get_sub_group_size()=%u, get_num_sub_groups()=%u\n",
-               groupId, (uint)get_sub_group_size(), (uint)get_num_sub_groups());
-        printf("[GEMV_DEBUG] get_local_id(0)=%u, get_local_id(1)=%u, get_local_size(0)=%u, get_local_size(1)=%u\n",
-               (uint)get_local_id(0), (uint)get_local_id(1), (uint)get_local_size(0), (uint)get_local_size(1));
-        printf("[GEMV_DEBUG] SIMDGROUP_WIDTH=%d, N_SIMDGROUP=%d, ADRENO_WAVE_SIZE=%d\n",
-               SIMDGROUP_WIDTH, N_SIMDGROUP, ADRENO_WAVE_SIZE);
-    }
-
     uint K = ne00;
     uint M = ne01;
 
