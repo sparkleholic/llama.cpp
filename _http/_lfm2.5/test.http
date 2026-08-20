@@ -1,0 +1,295 @@
+###############################################################################
+# llama.cpp llama-server : Smart Home Intent -> Device/Action 테스트
+#
+# 서버:
+#   llama-server -hf LiquidAI/LFM2.5-1.2B-Instruct-GGUF \
+#                --hf-file LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf \
+#                --jinja -c 0 --host 127.0.0.1 --port 8080
+#
+# -- 이 구성을 쓰는 이유 (1.2B, 발화 16개 실측 점수) --------------------------
+#   (a) 출력이 map 형태면 문법상 뒤에 키를 계속 붙일 수 있어, 모델이 발화와
+#       무관하게 모든 디바이스를 나열합니다 ......................... 3.5/8
+#   (b) 배열 [{ "device":.., "actions":[..] }] + maxItems 로 바꾸면
+#       "그만 쓰기"가 문법으로 가능해져 나열이 사라집니다 ......... 11.5/16
+#   (c) (b) + few-shot 5개(긍정 4 + 부정 1) ................... 13.5/16
+#   요청 6/7 이 (b),(a) 실패를 재현하는 비교군입니다.
+#
+# [주의] few-shot 과 마지막 user 메시지를 "둘 다" 들여쓴 JSON 으로 보내면
+#        13.5 -> 11.5 로 떨어집니다. 한쪽만 들여쓰기 하세요.
+#        (이 파일: @fewshot = 들여쓰기 / 각 요청의 user content = 한 줄)
+###############################################################################
+
+@host  = 127.0.0.1
+@port  = 8080
+@base  = http://{{host}}:{{port}}/v1
+
+# 모델 교체 지점 (서버에 로드된 id 와 일치. GET {{base}}/models 로 확인)
+@model = LiquidAI/LFM2.5-1.2B-Instruct-GGUF
+# @model = LiquidAI/LFM2.5-230M-GGUF
+
+#==============================================================================
+# [중요] REST Client 파일 변수는 값의 백슬래시를 먼저 해석합니다.
+#          \n -> 실제 줄바꿈,  \r -> CR,  \t -> TAB,  그 외 -> 백슬래시 삭제
+#        따라서 JSON 용 이스케이프는 한 번 더 써야 합니다:  \\n , \\"
+#        (\n 을 그대로 쓰면 raw LF 가 들어가 llama-server 가 500 을 반환합니다)
+#        또한 값 안에 닫는 중괄호 2개가 붙으면 변수 참조 문법과 충돌하므로
+#        사이를 한 칸 띄웁니다.
+#==============================================================================
+
+#------------------------------------------------------------------------------
+# SYSTEM PROMPT — 여기만 바꾸면 아래 모든 요청에 반영됩니다.
+# 원본 대비 수정점: 출력 형태를 배열로 기술 (Rule 3/4, Example Output).
+# 원본 map 형태로 되돌리려면 @system -> @system_map, @schema -> @schema_map.
+# ---------------------------------------------------------------------------
+#   You are an intelligent smart home assistant. Your task is to analyze the user's intent from their utterance (requests, complaints, or statements) and select the appropriate device(s) and action(s) to resolve the situation based ONLY on the provided available devices.
+#   
+#   ### Input Specification
+#   You will receive a JSON object containing:
+#   - `devices`: A key-value map where keys are device names and values contain available `actions` for that device.
+#   - `utterance`: The user's input string.
+#   
+#   ### Rules & Constraints
+#   1. **Contextual Grounding**: Select actions ONLY from the provided `actions` list for each available device. Do not invent devices or actions.
+#   2. **Intent Resolution**: Infer indirect complaints (e.g., "It's too hot" -> cooling needed) and map them to logical action sequences.
+#   3. **Strict JSON Output**: Return ONLY a valid JSON array of `{"device": ..., "actions": [...]}` objects, without any Markdown fences, explanations, or additional text. Include ONLY the devices needed to resolve the utterance.
+#   4. **No Action Handling**: If the utterance cannot be resolved by any available device/action or requires no action, return an empty JSON array: `[]`.
+#   
+#   ### Example Input
+#   {
+#     "devices": {
+#       "TV": { "actions": ["turn_on", "turn_off", "set_volume"] },
+#       "Air Conditioner": { "actions": ["turn_on", "turn_off", "set_temperature"] }
+#     },
+#     "utterance": "it's too hot"
+#   }
+#   
+#   ### Example Output
+#   [
+#     { "device": "Air Conditioner", "actions": ["turn_on", "set_temperature"] }
+#   ]
+# ---------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+@system = You are an intelligent smart home assistant. Your task is to analyze the user's intent from their utterance (requests, complaints, or statements) and select the appropriate device(s) and action(s) to resolve the situation based ONLY on the provided available devices.\\n\\n### Input Specification\\nYou will receive a JSON object containing:\\n- `devices`: A key-value map where keys are device names and values contain available `actions` for that device.\\n- `utterance`: The user's input string.\\n\\n### Rules & Constraints\\n1. **Contextual Grounding**: Select actions ONLY from the provided `actions` list for each available device. Do not invent devices or actions.\\n2. **Intent Resolution**: Infer indirect complaints (e.g., \\"It's too hot\\" -> cooling needed) and map them to logical action sequences.\\n3. **Strict JSON Output**: Return ONLY a valid JSON array of `{\\"device\\": ..., \\"actions\\": [...]}` objects, without any Markdown fences, explanations, or additional text. Include ONLY the devices needed to resolve the utterance.\\n4. **No Action Handling**: If the utterance cannot be resolved by any available device/action or requires no action, return an empty JSON array: `[]`.\\n\\n### Example Input\\n{\\n  \\"devices\\": {\\n    \\"TV\\": { \\"actions\\": [\\"turn_on\\", \\"turn_off\\", \\"set_volume\\"] },\\n    \\"Air Conditioner\\": { \\"actions\\": [\\"turn_on\\", \\"turn_off\\", \\"set_temperature\\"] }\\n  },\\n  \\"utterance\\": \\"it's too hot\\"\\n}\\n\\n### Example Output\\n[\\n  { \\"device\\": \\"Air Conditioner\\", \\"actions\\": [\\"turn_on\\", \\"set_temperature\\"] }\\n]
+
+# (원본 프롬프트, map 형태 — 요청 7 비교용)
+@system_map = You are an intelligent smart home assistant. Your task is to analyze the user's intent from their utterance (requests, complaints, or statements) and select the appropriate device(s) and action(s) to resolve the situation based ONLY on the provided available devices.\\n\\n### Input Specification\\nYou will receive a JSON object containing:\\n- `devices`: A key-value map where keys are device names and values contain available `actions` for that device.\\n- `utterance`: The user's input string.\\n\\n### Rules & Constraints\\n1. **Contextual Grounding**: Select actions ONLY from the provided `actions` list for each available device. Do not invent devices or actions.\\n2. **Intent Resolution**: Infer indirect complaints (e.g., \\"It's too hot\\" -> cooling needed) and map them to logical action sequences.\\n3. **Strict JSON Output**: Return ONLY a valid JSON object without any Markdown fences, explanations, or additional text.\\n4. **No Action Handling**: If the utterance cannot be resolved by any available device/action or requires no action, return an empty JSON object: `{}`.\\n\\n### Example Input\\n{\\n  \\"devices\\": {\\n    \\"TV\\": { \\"actions\\": [\\"turn_on\\", \\"turn_off\\", \\"set_volume\\"] },\\n    \\"Air Conditioner\\": { \\"actions\\": [\\"turn_on\\", \\"turn_off\\", \\"set_temperature\\"] }\\n  },\\n  \\"utterance\\": \\"it's too hot\\"\\n}\\n\\n### Example Output\\n{\\n  \\"Air Conditioner\\": [\\"turn_on\\", \\"set_temperature\\"]\\n}
+
+
+#------------------------------------------------------------------------------
+# 출력 스키마: device 는 const 로 고정, actions 는 그 디바이스의 enum 만 허용.
+# maxItems 3 = 한 발화당 최대 3개 디바이스. 매칭 없으면 [] 입니다.
+# 디바이스 목록을 바꾸면 이 줄과 각 요청의 user content 를 함께 고치세요.
+#------------------------------------------------------------------------------
+
+@schema = {"type":"array","maxItems":3,"items":{"anyOf":[{"type":"object","properties":{"device":{"const":"TV"},"actions":{"type":"array","minItems":1,"maxItems":2,"items":{"type":"string","enum":["turn_on","turn_off","set_volume","set_channel"]} } },"required":["device","actions"],"additionalProperties":false},{"type":"object","properties":{"device":{"const":"Air Conditioner"},"actions":{"type":"array","minItems":1,"maxItems":2,"items":{"type":"string","enum":["turn_on","turn_off","set_temperature","set_mode"]} } },"required":["device","actions"],"additionalProperties":false},{"type":"object","properties":{"device":{"const":"Air Purifier"},"actions":{"type":"array","minItems":1,"maxItems":2,"items":{"type":"string","enum":["turn_on","turn_off","set_mode"]} } },"required":["device","actions"],"additionalProperties":false},{"type":"object","properties":{"device":{"const":"Light"},"actions":{"type":"array","minItems":1,"maxItems":2,"items":{"type":"string","enum":["turn_on","turn_off","set_brightness"]} } },"required":["device","actions"],"additionalProperties":false},{"type":"object","properties":{"device":{"const":"Curtain"},"actions":{"type":"array","minItems":1,"maxItems":2,"items":{"type":"string","enum":["open","close"]} } },"required":["device","actions"],"additionalProperties":false}]} }
+
+# (비교용) map 스키마 — 요청 7 에서 나열 문제를 재현합니다
+@schema_map = {"type":"object","additionalProperties":false,"properties":{"TV":{"type":"array","minItems":1,"items":{"type":"string","enum":["turn_on","turn_off","set_volume","set_channel"]} },"Air Conditioner":{"type":"array","minItems":1,"items":{"type":"string","enum":["turn_on","turn_off","set_temperature","set_mode"]} },"Air Purifier":{"type":"array","minItems":1,"items":{"type":"string","enum":["turn_on","turn_off","set_mode"]} },"Light":{"type":"array","minItems":1,"items":{"type":"string","enum":["turn_on","turn_off","set_brightness"]} },"Curtain":{"type":"array","minItems":1,"items":{"type":"string","enum":["open","close"]} } } }
+
+#------------------------------------------------------------------------------
+# few-shot 예제 5개 (긍정 4 + 부정 1). 정확도의 대부분이 여기서 나옵니다.
+#------------------------------------------------------------------------------
+
+@fewshot = {"role":"user","content":"{\\n  \\"devices\\": {\\n    \\"TV\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_volume\\",\\n        \\"set_channel\\"\\n      ]\\n    },\\n    \\"Air Conditioner\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_temperature\\",\\n        \\"set_mode\\"\\n      ]\\n    },\\n    \\"Air Purifier\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_mode\\"\\n      ]\\n    },\\n    \\"Light\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_brightness\\"\\n      ]\\n    },\\n    \\"Curtain\\": {\\n      \\"actions\\": [\\n        \\"open\\",\\n        \\"close\\"\\n      ]\\n    }\\n  },\\n  \\"utterance\\": \\"it's too dark in here\\"\\n}"},{"role":"assistant","content":"[{\\"device\\": \\"Light\\", \\"actions\\": [\\"turn_on\\", \\"set_brightness\\"]}]"},{"role":"user","content":"{\\n  \\"devices\\": {\\n    \\"TV\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_volume\\",\\n        \\"set_channel\\"\\n      ]\\n    },\\n    \\"Air Conditioner\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_temperature\\",\\n        \\"set_mode\\"\\n      ]\\n    },\\n    \\"Air Purifier\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_mode\\"\\n      ]\\n    },\\n    \\"Light\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_brightness\\"\\n      ]\\n    },\\n    \\"Curtain\\": {\\n      \\"actions\\": [\\n        \\"open\\",\\n        \\"close\\"\\n      ]\\n    }\\n  },\\n  \\"utterance\\": \\"turn off the TV please\\"\\n}"},{"role":"assistant","content":"[{\\"device\\": \\"TV\\", \\"actions\\": [\\"turn_off\\"]}]"},{"role":"user","content":"{\\n  \\"devices\\": {\\n    \\"TV\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_volume\\",\\n        \\"set_channel\\"\\n      ]\\n    },\\n    \\"Air Conditioner\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_temperature\\",\\n        \\"set_mode\\"\\n      ]\\n    },\\n    \\"Air Purifier\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_mode\\"\\n      ]\\n    },\\n    \\"Light\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_brightness\\"\\n      ]\\n    },\\n    \\"Curtain\\": {\\n      \\"actions\\": [\\n        \\"open\\",\\n        \\"close\\"\\n      ]\\n    }\\n  },\\n  \\"utterance\\": \\"the air smells bad\\"\\n}"},{"role":"assistant","content":"[{\\"device\\": \\"Air Purifier\\", \\"actions\\": [\\"turn_on\\", \\"set_mode\\"]}]"},{"role":"user","content":"{\\n  \\"devices\\": {\\n    \\"TV\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_volume\\",\\n        \\"set_channel\\"\\n      ]\\n    },\\n    \\"Air Conditioner\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_temperature\\",\\n        \\"set_mode\\"\\n      ]\\n    },\\n    \\"Air Purifier\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_mode\\"\\n      ]\\n    },\\n    \\"Light\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_brightness\\"\\n      ]\\n    },\\n    \\"Curtain\\": {\\n      \\"actions\\": [\\n        \\"open\\",\\n        \\"close\\"\\n      ]\\n    }\\n  },\\n  \\"utterance\\": \\"I'm going to sleep now\\"\\n}"},{"role":"assistant","content":"[{\\"device\\": \\"Light\\", \\"actions\\": [\\"turn_off\\"]}, {\\"device\\": \\"Curtain\\", \\"actions\\": [\\"close\\"]}]"},{"role":"user","content":"{\\n  \\"devices\\": {\\n    \\"TV\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_volume\\",\\n        \\"set_channel\\"\\n      ]\\n    },\\n    \\"Air Conditioner\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_temperature\\",\\n        \\"set_mode\\"\\n      ]\\n    },\\n    \\"Air Purifier\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_mode\\"\\n      ]\\n    },\\n    \\"Light\\": {\\n      \\"actions\\": [\\n        \\"turn_on\\",\\n        \\"turn_off\\",\\n        \\"set_brightness\\"\\n      ]\\n    },\\n    \\"Curtain\\": {\\n      \\"actions\\": [\\n        \\"open\\",\\n        \\"close\\"\\n      ]\\n    }\\n  },\\n  \\"utterance\\": \\"who won the world cup?\\"\\n}"},{"role":"assistant","content":"[]"}
+
+
+### 0. 서버 상태 확인
+GET http://{{host}}:{{port}}/health
+
+
+### 0-1. 로드된 모델 목록
+GET {{base}}/models
+
+### 1. 간접 불만 — 기대: Air Conditioner turn_on/set_temperature
+POST {{base}}/chat/completions
+Content-Type: application/json
+
+{
+  "model": "{{model}}",
+  "messages": [
+    { "role": "system", "content": "{{system}}" },
+    {{fewshot}},
+    { "role": "user",   "content": "{\"devices\": {\"TV\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_volume\", \"set_channel\"]}, \"Air Conditioner\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_temperature\", \"set_mode\"]}, \"Air Purifier\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_mode\"]}, \"Light\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_brightness\"]}, \"Curtain\": {\"actions\": [\"open\", \"close\"]}}, \"utterance\": \"it's too hot\"}" }
+  ],
+  "max_tokens": 128,
+  "temperature": 0.0,
+  "top_k": 1,
+  "seed": 42,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": { "name": "smart_home_actions", "strict": true, "schema": {{schema}} }
+  }
+}
+
+
+### 2. 직접 명령 복수 — 기대: TV turn_off + Curtain close
+POST {{base}}/chat/completions
+Content-Type: application/json
+
+{
+  "model": "{{model}}",
+  "messages": [
+    { "role": "system", "content": "{{system}}" },
+    {{fewshot}},
+    { "role": "user",   "content": "{\"devices\": {\"TV\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_volume\", \"set_channel\"]}, \"Air Conditioner\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_temperature\", \"set_mode\"]}, \"Air Purifier\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_mode\"]}, \"Light\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_brightness\"]}, \"Curtain\": {\"actions\": [\"open\", \"close\"]}}, \"utterance\": \"Turn off the TV and close the curtain.\"}" }
+  ],
+  "max_tokens": 128,
+  "temperature": 0.0,
+  "top_k": 1,
+  "seed": 42,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": { "name": "smart_home_actions", "strict": true, "schema": {{schema}} }
+  }
+}
+
+
+### 3. 한국어 — 기대: Light turn_on/set_brightness
+POST {{base}}/chat/completions
+Content-Type: application/json
+
+{
+  "model": "{{model}}",
+  "messages": [
+    { "role": "system", "content": "{{system}}" },
+    {{fewshot}},
+    { "role": "user",   "content": "{\"devices\": {\"TV\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_volume\", \"set_channel\"]}, \"Air Conditioner\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_temperature\", \"set_mode\"]}, \"Air Purifier\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_mode\"]}, \"Light\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_brightness\"]}, \"Curtain\": {\"actions\": [\"open\", \"close\"]}}, \"utterance\": \"거실이 너무 어두워요\"}" }
+  ],
+  "max_tokens": 128,
+  "temperature": 0.0,
+  "top_k": 1,
+  "seed": 42,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": { "name": "smart_home_actions", "strict": true, "schema": {{schema}} }
+  }
+}
+
+
+### 4. 처리 불가 — 기대: []
+POST {{base}}/chat/completions
+Content-Type: application/json
+
+{
+  "model": "{{model}}",
+  "messages": [
+    { "role": "system", "content": "{{system}}" },
+    {{fewshot}},
+    { "role": "user",   "content": "{\"devices\": {\"TV\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_volume\", \"set_channel\"]}, \"Air Conditioner\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_temperature\", \"set_mode\"]}, \"Air Purifier\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_mode\"]}, \"Light\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_brightness\"]}, \"Curtain\": {\"actions\": [\"open\", \"close\"]}}, \"utterance\": \"What's the weather in Seoul tomorrow?\"}" }
+  ],
+  "max_tokens": 128,
+  "temperature": 0.0,
+  "top_k": 1,
+  "seed": 42,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": { "name": "smart_home_actions", "strict": true, "schema": {{schema}} }
+  }
+}
+
+
+### 5. 목록에 없는 디바이스 — 기대: [] (지어내지 않음)
+POST {{base}}/chat/completions
+Content-Type: application/json
+
+{
+  "model": "{{model}}",
+  "messages": [
+    { "role": "system", "content": "{{system}}" },
+    {{fewshot}},
+    { "role": "user",   "content": "{\"devices\": {\"TV\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_volume\", \"set_channel\"]}, \"Air Conditioner\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_temperature\", \"set_mode\"]}, \"Air Purifier\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_mode\"]}, \"Light\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_brightness\"]}, \"Curtain\": {\"actions\": [\"open\", \"close\"]}}, \"utterance\": \"Start the robot vacuum in the living room.\"}" }
+  ],
+  "max_tokens": 128,
+  "temperature": 0.0,
+  "top_k": 1,
+  "seed": 42,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": { "name": "smart_home_actions", "strict": true, "schema": {{schema}} }
+  }
+}
+
+
+### 6. (비교) few-shot 제거 — 관련 없는 디바이스가 섞여 들어옵니다
+POST {{base}}/chat/completions
+Content-Type: application/json
+
+{
+  "model": "{{model}}",
+  "messages": [
+    { "role": "system", "content": "{{system}}" },
+    { "role": "user",   "content": "{\"devices\": {\"TV\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_volume\", \"set_channel\"]}, \"Air Conditioner\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_temperature\", \"set_mode\"]}, \"Air Purifier\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_mode\"]}, \"Light\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_brightness\"]}, \"Curtain\": {\"actions\": [\"open\", \"close\"]}}, \"utterance\": \"can you turn the volume down?\"}" }
+  ],
+  "max_tokens": 128,
+  "temperature": 0.0,
+  "top_k": 1,
+  "seed": 42,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": { "name": "smart_home_actions", "strict": true, "schema": {{schema}} }
+  }
+}
+
+
+### 7. (비교) 원본 map 스키마 — 발화와 무관하게 전부 나열되는 실패 재현
+POST {{base}}/chat/completions
+Content-Type: application/json
+
+{
+  "model": "{{model}}",
+  "messages": [
+    { "role": "system", "content": "{{system_map}}" },
+    { "role": "user",   "content": "{\"devices\": {\"TV\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_volume\", \"set_channel\"]}, \"Air Conditioner\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_temperature\", \"set_mode\"]}, \"Air Purifier\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_mode\"]}, \"Light\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_brightness\"]}, \"Curtain\": {\"actions\": [\"open\", \"close\"]}}, \"utterance\": \"it's too hot\"}" }
+  ],
+  "max_tokens": 128,
+  "temperature": 0.0,
+  "top_k": 1,
+  "seed": 42,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": { "name": "smart_home_actions", "strict": true, "schema": {{schema_map}} }
+  }
+}
+
+
+### 8. 스트리밍 (SSE)
+POST {{base}}/chat/completions
+Content-Type: application/json
+Accept: text/event-stream
+
+{
+  "model": "{{model}}",
+  "messages": [
+    { "role": "system", "content": "{{system}}" },
+    {{fewshot}},
+    { "role": "user",   "content": "{\"devices\": {\"TV\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_volume\", \"set_channel\"]}, \"Air Conditioner\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_temperature\", \"set_mode\"]}, \"Air Purifier\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_mode\"]}, \"Light\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_brightness\"]}, \"Curtain\": {\"actions\": [\"open\", \"close\"]}}, \"utterance\": \"it's too hot\"}" }
+  ],
+  "max_tokens": 128,
+  "temperature": 0.0,
+  "top_k": 1,
+  "seed": 42,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": { "name": "smart_home_actions", "strict": true, "schema": {{schema}} }
+  },
+  "stream": true
+}
+
+
+### 9. (비교) 제약 없음 — 산문/코드펜스가 붙는지 확인
+POST {{base}}/chat/completions
+Content-Type: application/json
+
+{
+  "model": "{{model}}",
+  "messages": [
+    { "role": "system", "content": "{{system}}" },
+    {{fewshot}},
+    { "role": "user",   "content": "{\"devices\": {\"TV\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_volume\", \"set_channel\"]}, \"Air Conditioner\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_temperature\", \"set_mode\"]}, \"Air Purifier\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_mode\"]}, \"Light\": {\"actions\": [\"turn_on\", \"turn_off\", \"set_brightness\"]}, \"Curtain\": {\"actions\": [\"open\", \"close\"]}}, \"utterance\": \"it's too hot\"}" }
+  ],
+  "max_tokens": 128,
+  "temperature": 0.0,
+  "top_k": 1,
+  "seed": 42
+}
